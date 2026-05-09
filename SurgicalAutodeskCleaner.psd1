@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.6'
+    ModuleVersion     = '1.1.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -33,10 +33,13 @@
     Description       = 'A professional, enterprise-grade PowerShell module for surgical extraction and total system purging of Autodesk software.
 
 Features:
-- Start-SACInteractive (Alias: Start-SAC): Dynamic CLI menu for selecting target years and products.
+- Start-SACInteractive (Alias: Start-SAC): Full interactive main menu — Cleanup, Purge, Profile Reset, Licensing Reset, Scan, and Restore.
 - Start-SACCleanup: Surgical background removal tool for RMMs (e.g., N-Central, Automate).
-- Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
 - Start-SACPurge: Scorched-earth registry and file system master purge.
+- Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
+- Reset-SACUserProfile: Resets per-user Autodesk AppData (rename Roaming, delete Local) for a clean-start experience without destroying user customizations.
+- Reset-SACLicensing: Wipes CLM, AdskLicensing, and SSO token cache to force clean re-authentication. Resolves stuck activation and seat reservation issues.
+- Restore-SACUserProfile: Lists, restores, or purges Roaming profile backups created by Reset-SACUserProfile.
 
 Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
 
@@ -79,7 +82,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
     # NestedModules = @()
 
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan'
+    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan', 'Reset-SACUserProfile', 'Reset-SACLicensing', 'Restore-SACUserProfile'
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
     CmdletsToExport   = '*'
@@ -105,7 +108,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
         PSData = @{
 
             # Tags applied to this module. These help with module discovery in online galleries.
-            Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Dailen'
+            Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Licensing', 'UserProfile', 'Dailen'
 
             # A URL to the license for this module.
             LicenseUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner/blob/master/LICENSE'
