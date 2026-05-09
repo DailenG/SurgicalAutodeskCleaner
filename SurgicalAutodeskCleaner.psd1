@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0'
+    ModuleVersion     = '1.0.1'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -30,7 +30,17 @@
     Copyright         = '(c) 2026 Dailen. All rights reserved.'
 
     # Description of the functionality provided by this module
-    Description       = 'A surgical cleanup and master purge utility for Autodesk software products.'
+    Description       = 'A professional, enterprise-grade PowerShell module for surgical extraction and total system purging of Autodesk software.
+
+Features:
+- Start-SACInteractive (Alias: Start-SAC): Dynamic CLI menu for selecting target years and products.
+- Start-SACCleanup: Surgical background removal tool for RMMs (e.g., N-Central, Automate).
+- Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
+- Start-SACPurge: Scorched-earth registry and file system master purge.
+
+Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
+
+DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
 
     # Minimum version of the Windows PowerShell engine required by this module
     # PowerShellVersion = ''
@@ -98,10 +108,10 @@
             Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Dailen'
 
             # A URL to the license for this module.
-            # LicenseUri = ''
+            LicenseUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner/blob/master/LICENSE'
 
             # A URL to the main website for this project.
-            # ProjectUri = ''
+            ProjectUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner'
 
             # A URL to an icon representing this module.
             # IconUri = ''
