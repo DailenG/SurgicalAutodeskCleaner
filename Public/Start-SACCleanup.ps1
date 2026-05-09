@@ -155,6 +155,37 @@ function Start-SACCleanup {
         }
     }
 
+    function Invoke-SACShortcutCleanup {
+        param ([string]$ProductName, [string]$Version)
+
+        $ShortcutLocations = @(
+            "$($env:Public)\Desktop",
+            "C:\Users\*\Desktop",
+            "$($env:ProgramData)\Microsoft\Windows\Start Menu\Programs",
+            "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
+        )
+
+        $SearchPattern = "*$($ProductName)*$($Version)*.lnk"
+
+        foreach ($loc in $ShortcutLocations) {
+            # Resolve wildcards for user profiles
+            $resolved = if ($loc -match '\*') { Resolve-Path $loc -ErrorAction SilentlyContinue } else { ,$loc }
+            
+            foreach ($path in $resolved) {
+                if (Test-Path $path) {
+                    Get-ChildItem -Path $path -Filter $SearchPattern -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                        try {
+                            Remove-Item $_.FullName -Force -ErrorAction Stop
+                            Write-Msg "Removed shortcut: $($_.Name)" "Success"
+                        } catch {
+                            Write-QuietLog "Failed to remove shortcut $($_.FullName): $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     # ---------------------------------------------------------------------------
     # Tier Classification
     # ---------------------------------------------------------------------------
@@ -399,8 +430,9 @@ function Start-SACCleanup {
             Invoke-SACUninstallEntry -App $item.App
         }
 
-        # Run the surgical directory sweep after all uninstallation attempts
+        # Run the surgical sweeps after all uninstallation attempts
         Invoke-SurgicalDirectoryCleanup -ProductName $ProductName -Version $Version
+        Invoke-SACShortcutCleanup -ProductName $ProductName -Version $Version
     }
 
     # --- Execution Block ---
