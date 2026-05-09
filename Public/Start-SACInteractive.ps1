@@ -31,7 +31,7 @@ function Start-SACInteractive {
             }
             if (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue) {
                 try {
-                    $selected = $Items | Out-ConsoleGridView -Title $Title -OutputMode Multiple -ErrorAction Stop
+                    $selected = $Items | Out-ConsoleGridView -Title "$Title (CTRL-A to Select All, SPACE to toggle)" -OutputMode Multiple -ErrorAction Stop
                     if ($selected) { return @($selected) }
                     return @()
                 } catch {
