@@ -366,8 +366,8 @@ function Start-SACCleanup {
                     Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
                     Write-Msg "  Evicted: $dn" "Success"
                 } catch {
-                    Write-QuietLog "Failed to evict $dn`: $($_.Exception.Message)"
-                    $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message }
+                    Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                    $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
                 Write-Msg "  [FULL uninstall] No parent removed — running uninstaller: $dn" "Info"
@@ -385,8 +385,8 @@ function Start-SACCleanup {
                     Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
                     Write-Msg "  Evicted: $dn" "Success"
                 } catch {
-                    Write-QuietLog "Failed to evict $dn`: $($_.Exception.Message)"
-                    $script:SACFailures += [PSCustomObject]@{ Component = "Evict Addon: $dn"; Reason = $_.Exception.Message }
+                    Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                    $script:SACFailures += [PSCustomObject]@{ Component = "Evict Addon: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
                 Write-Msg "  [FULL uninstall] No parent removed — running uninstaller: $dn" "Info"
@@ -439,15 +439,39 @@ function Start-SACCleanup {
     Write-Msg " CLEANUP COMPLETED in $($ElapsedTime)" "Success"
     Write-Msg "==========================================" "Info"
 
-    if ($script:SACFailures.Count -gt 0) {
-        Write-Host "`n[!] CRITICAL COMPONENT FAILURES DETECTED:" -ForegroundColor Red
-        foreach ($fail in $script:SACFailures) {
+    $criticals = @($script:SACFailures | Where-Object { $_.Severity -ne 'Warning' })
+    $warnings   = @($script:SACFailures | Where-Object { $_.Severity -eq 'Warning' })
+
+    if ($criticals.Count -gt 0) {
+        Write-Host "`n[!] FAILURES REQUIRING ATTENTION:" -ForegroundColor Red
+        foreach ($fail in $criticals) {
             Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
             Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
         }
-        Write-Host "`nPlease review the Debug Log for deeper diagnostics or resolve locks manually.`n" -ForegroundColor Red
-    } else {
-        Write-Host "`n[*] All operations completed successfully with no critical failures.`n" -ForegroundColor Green
+        Write-Host "`nReview the Debug Log for diagnostics or resolve locks manually.`n" -ForegroundColor Red
+    }
+
+    if ($warnings.Count -gt 0) {
+        Write-Host "`n[~] MINOR NOTICES ($($warnings.Count) item(s) - likely moot after parent removal):" -ForegroundColor DarkYellow
+        foreach ($fail in $warnings) {
+            Write-Host "   - $($fail.Component)" -ForegroundColor DarkGray
+        }
+        Write-Host "    See Debug Log for details. These are typically benign.`n" -ForegroundColor DarkGray
+    }
+
+    if ($criticals.Count -eq 0 -and $warnings.Count -eq 0) {
+        Write-Host "`n[*] All operations completed successfully with no failures.`n" -ForegroundColor Green
+    } elseif ($criticals.Count -eq 0) {
+        Write-Host "`n[*] Primary operations succeeded. $($warnings.Count) minor notice(s) logged.`n" -ForegroundColor Green
+    }
+
+    # Persist outcome so the interactive menu can show a status badge on return
+    $script:SACLastRunStatus = [PSCustomObject]@{
+        Operation = 'Cleanup'
+        Criticals = $criticals.Count
+        Warnings  = $warnings.Count
+        Elapsed   = $ElapsedTime
+        LogDir    = $LogDir
     }
 
     Stop-Transcript | Out-Null

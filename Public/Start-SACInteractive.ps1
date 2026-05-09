@@ -1,4 +1,4 @@
-﻿function Start-SACInteractive {
+function Start-SACInteractive {
 <#
 .SYNOPSIS
     Interactive CLI main menu for the Surgical Autodesk Cleaner toolkit.
@@ -295,6 +295,20 @@
             }
         } else {
             Write-BoxLine -Text "  No versioned Autodesk products detected." -Color "Yellow"
+        }
+
+        # Last-run status badge
+        if ($script:SACLastRunStatus) {
+            $st = $script:SACLastRunStatus
+            Write-Host "$ML$border$MR" -ForegroundColor DarkCyan
+            if ($st.Criticals -gt 0) {
+                Write-BoxLine -Text "  [!] Last Run ($($st.Operation)): $($st.Criticals) item(s) need attention" -Color "Red" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "      $($st.Warnings) minor notice(s). Log: $($st.LogDir)" -Color "DarkGray" -BorderColor "DarkCyan"
+            } elseif ($st.Warnings -gt 0) {
+                Write-BoxLine -Text "  [~] Last Run ($($st.Operation)): OK  ($($st.Warnings) minor notice(s))" -Color "DarkYellow" -BorderColor "DarkCyan"
+            } else {
+                Write-BoxLine -Text "  [OK] Last Run ($($st.Operation)): Completed successfully in $($st.Elapsed)" -Color "Green" -BorderColor "DarkCyan"
+            }
         }
 
         # Menu options
