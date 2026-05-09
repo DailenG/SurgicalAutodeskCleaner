@@ -258,8 +258,8 @@ function Start-SACInteractive {
         $H  = [string][char]0x2550  # horizontal double line
         $V  = [string][char]0x2551  # vertical double line
 
-        # Fixed inner width (between the vertical borders) = 60 chars
-        $W = 60
+        # Fixed inner width (between the vertical borders) = 80 chars
+        $W = 80
 
         function Write-BoxLine {
             param(
@@ -277,7 +277,7 @@ function Start-SACInteractive {
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.4"
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.5"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
