@@ -1,4 +1,4 @@
-﻿function Start-SACCleanup {
+function Start-SACCleanup {
     <#
 .SYNOPSIS
     Surgical Autodesk Version Cleanup
@@ -164,7 +164,14 @@
     # Tier 4 - Shared components: full uninstall, processed last
     # ---------------------------------------------------------------------------
     $Tier2Pattern = 'Service Pack|\bSP\d\b|Hotfix|Patch|Update \d|Security Update'
-    $Tier3Pattern = 'Language Pack|Object Enabler|Add-[Ii]n|Plugin|Extension|Content Library|Material Library Base|Sample|Template|Documentation|DWG TrueView'
+    $Tier3Pattern = 'Language Pack|Object Enabler|Add-[Ii]n|Plugin|Extension|' +
+                    'Content Library|Content Core|Content Essential|Content Basic|' +
+                    'Material Library Base|Material Library Low|Material Library Medium|Material Library High|' +
+                    'Sample|Template|Documentation|DWG TrueView|' +
+                    'Colorbooks|Color Books|Unit Schemas|MEP Content|MEP Metric|MEP Imperial|' +
+                    'Revit Content|Batch Print|eTransmit|Worksharing Monitor|DB Link|Model Review|' +
+                    'BIM Interoperability|Cloud Models|Issues Addon|Robot Structural Analysis Extension|' +
+                    'OpenStudio CLI'
     $Tier4Pattern = 'Shared Component|Collaboration for Revit|Desktop Connector|Desktop App|Single Sign|Autodesk Access|Autodesk Identity|Genuine Service'
 
     function Get-SACTier {
@@ -204,13 +211,19 @@
             Invoke-SACCustomUninstall -App $App
         }
 
-        # Always evict the registry key afterwards
-        try {
-            Remove-Item $App.PSPath -Recurse -Force -ErrorAction Stop
-            Write-Msg "  Evicted registry key: $DisplayName" "Success"
-        } catch {
-            Write-QuietLog "Failed to evict registry key for $DisplayName ($($App.PSPath)): $($_.Exception.Message)"
-            $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
+        # Evict the registry key. If it is already gone the uninstaller
+        # cleaned up after itself, which is the ideal outcome - not a failure.
+        if (Test-Path $App.PSPath) {
+            try {
+                Remove-Item $App.PSPath -Recurse -Force -ErrorAction Stop
+                Write-Msg "  Evicted registry key: $DisplayName" "Success"
+            } catch {
+                Write-QuietLog "Failed to evict registry key for $DisplayName ($($App.PSPath)): $($_.Exception.Message)"
+                $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
+            }
+        } else {
+            Write-Msg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
+            Write-QuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
         }
     }
 
@@ -233,8 +246,18 @@
             } catch { break }
         }
         Write-Msg "  Exit code $($Process.ExitCode): $Label" "Info"
-        if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
+        # Safe/expected exit codes:
+        #   0     = success
+        #   3010  = success, reboot required
+        #   1605  = product not installed (MSI)
+        #   1614  = product not installed / uninstall already done
+        #   1646  = product not registered for this machine (per-user install)
+        #   7     = ODIS/setup: product not found (already removed by parent)
+        $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
+        if ($Process.ExitCode -notin $safeExitCodes) {
             $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $Label"; Reason = "Exit Code $($Process.ExitCode)" }
+        } else {
+            Write-QuietLog "  Safe exit code $($Process.ExitCode) for: $Label"
         }
     }
 
@@ -261,9 +284,16 @@
             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
             Invoke-SACWaitOnProcess -Process $Process -Label $DisplayName
         } catch {
-            Write-QuietLog "Failed to launch uninstaller for $($DisplayName): $($_.Exception.Message)"
-            Write-Msg "  Launch failed for $DisplayName (see Debug Log)" "Error"
-            $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Launch: $DisplayName"; Reason = $_.Exception.Message }
+            $msg = $_.Exception.Message
+            # If the installer exe itself is gone the product was already removed - not a failure
+            if ($_.Exception -is [System.ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -in @(2, 3)) {
+                Write-Msg "  Installer not found (already removed): $DisplayName" "Info"
+                Write-QuietLog "Installer exe not found for $($DisplayName) - treating as already removed."
+            } else {
+                Write-QuietLog "Failed to launch uninstaller for $($DisplayName): $msg"
+                Write-Msg "  Launch failed for $DisplayName (see Debug Log)" "Error"
+                $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Launch: $DisplayName"; Reason = $msg }
+            }
         }
     }
 
