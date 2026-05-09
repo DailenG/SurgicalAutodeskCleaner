@@ -21,7 +21,13 @@ function Start-SACInteractive {
         if ($PSVersionTable.PSVersion.Major -ge 7) {
             if (-not (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue)) {
                 try { Import-Module Microsoft.PowerShell.ConsoleGuiTools -ErrorAction Stop } 
-                catch { }
+                catch { 
+                    try { 
+                        Write-Host "Installing Microsoft.PowerShell.ConsoleGuiTools for enhanced UI..." -ForegroundColor Cyan
+                        Install-Module Microsoft.PowerShell.ConsoleGuiTools -Force -Scope CurrentUser -ErrorAction Stop
+                        Import-Module Microsoft.PowerShell.ConsoleGuiTools -ErrorAction Stop
+                    } catch {}
+                }
             }
             if (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue) {
                 $selected = $Items | Out-ConsoleGridView -Title $Title -OutputMode Multiple
