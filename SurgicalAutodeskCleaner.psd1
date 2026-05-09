@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.2.6'
+    ModuleVersion     = '1.2.7'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -31,6 +31,8 @@
 
     # Description of the functionality provided by this module
     Description       = 'A professional, enterprise-grade PowerShell module for surgical extraction and total system purging of Autodesk software.
+    
+    Compatible with PowerShell 5.1 and 7.0+. Note: Interactive Mode (TUI) is best experienced in PowerShell 7+.
 
 Features:
 - Start-SACInteractive (Alias: Start-SAC): Full interactive main menu — Cleanup, Purge, Profile Reset, Licensing Reset, Scan, and Restore.

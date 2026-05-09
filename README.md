@@ -20,6 +20,15 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 - **Deep Cleansing:** Purges orphaned installation directories and handles cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
 - **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
+- **PowerShell Core Optimized:** While fully compatible with PowerShell 5.1, the **Interactive Mode (TUI)** is best experienced in **PowerShell 7+**.
+
+---
+
+## Requirements
+
+- **Operating System:** Windows 10/11 or Windows Server 2016+
+- **PowerShell Version:** 5.1 or **7.0+ (Recommended for TUI)**
+- **Permissions:** Administrative privileges are required for registry and service manipulation.
 
 ---
 

@@ -277,7 +277,7 @@ function Start-SACInteractive {
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.6"
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.7"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -321,6 +321,10 @@ function Start-SACInteractive {
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
         Write-BoxLine -Text "  [Q]  Quit"
+        if ($PSVersionTable.PSVersion.Major -lt 7) {
+            Write-Host $borderLine    -ForegroundColor DarkCyan
+            Write-BoxLine -Text "  Notice: Interactive mode is best experienced in PowerShell 7 (Core)+" -Color "DarkGray"
+        }
         Write-Host $borderLine    -ForegroundColor DarkCyan
         Write-Host "$BL$border$BR" -ForegroundColor DarkCyan
         Write-Host ""
