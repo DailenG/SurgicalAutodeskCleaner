@@ -1,4 +1,4 @@
-function Reset-SACLicensing {
+﻿function Reset-SACLicensing {
 <#
 .SYNOPSIS
     Wipes Autodesk licensing data to force a clean re-authentication.

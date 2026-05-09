@@ -1,4 +1,4 @@
-function Start-SACScan {
+﻿function Start-SACScan {
     <#
     .SYNOPSIS
         Generates a pre-flight scan report of Autodesk components.

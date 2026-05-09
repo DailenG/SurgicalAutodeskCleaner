@@ -1,4 +1,4 @@
-function Start-SACInteractive {
+﻿function Start-SACInteractive {
 <#
 .SYNOPSIS
     Interactive CLI main menu for the Surgical Autodesk Cleaner toolkit.
@@ -64,17 +64,30 @@ function Start-SACInteractive {
     # Discover installed Autodesk products for header context
     # -------------------------------------------------------------------------
     function Get-InstalledAutodeskSummary {
-        $keys = Get-ItemProperty -Path @(
+        # Known primary/parent product keywords — these float to the top
+        $PrimaryProducts = @(
+            'AutoCAD','Revit','Civil 3D','Inventor','Navisworks','3ds Max','Maya',
+            'Fusion','Vault','ReCap','Advance Steel','BIM 360','InfraWorks'
+        )
+
+        $all = Get-ItemProperty -Path @(
             'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
             'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
         ) -ErrorAction SilentlyContinue |
             Where-Object { $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk' } |
             Where-Object { $_.DisplayName -match '\b20\d{2}\b' } |
-            Select-Object -ExpandProperty DisplayName -Unique |
-            Sort-Object
+            Select-Object -ExpandProperty DisplayName -Unique
 
-        return $keys
+        # Score: 0 = primary product, 1 = everything else
+        $sorted = $all | Sort-Object {
+            $name = $_
+            $isPrimary = ($PrimaryProducts | Where-Object { $name -match [regex]::Escape($_) }).Count -gt 0
+            if ($isPrimary) { 0 } else { 1 }
+        }, { $_ }   # secondary sort: alphabetical within each group
+
+        return $sorted
     }
+
 
     # -------------------------------------------------------------------------
     # Surgical Cleanup flow (product + year selection → Start-SACCleanup)
@@ -275,8 +288,8 @@ function Start-SACInteractive {
         Write-Host $borderLine -ForegroundColor DarkCyan
         Write-BoxLine -Text "  [1]  Surgical Cleanup       Targeted uninstall by product/year"
         Write-BoxLine -Text "  [2]  Master Purge           Scorched-earth full system removal"
-        Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData & reg"
-        Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache & FlexNet"
+        Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData and reg"
+        Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache and FlexNet"
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
         Write-BoxLine -Text "  [Q]  Quit"

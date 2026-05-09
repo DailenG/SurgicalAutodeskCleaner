@@ -1,4 +1,4 @@
-function Reset-SACUserProfile {
+﻿function Reset-SACUserProfile {
 <#
 .SYNOPSIS
     Resets per-user Autodesk application data for a clean-start experience.
@@ -174,7 +174,7 @@ function Reset-SACUserProfile {
                     $newName = "$($dir.FullName)$BackupSuffix"
                     try {
                         Rename-Item -Path $dir.FullName -NewName $newName -ErrorAction Stop
-                        Write-Msg "[$userName] Backed up Roaming profile: $($dir.Name) → $($dir.Name)$BackupSuffix" "Success"
+                        Write-Msg "[$userName] Backed up Roaming profile: $($dir.Name) -> $($dir.Name)$BackupSuffix" "Success"
                         $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$newName; Result="OK" }
                     } catch {
                         Write-QuietLog "Failed to rename roaming $($dir.FullName): $($_.Exception.Message)"

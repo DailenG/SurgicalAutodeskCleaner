@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $ModulePath = Resolve-Path "$PSScriptRoot\..\SurgicalAutodeskCleaner.psd1"
 }
 

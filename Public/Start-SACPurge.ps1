@@ -1,4 +1,4 @@
-function Start-SACPurge {
+﻿function Start-SACPurge {
     <#
 .SYNOPSIS
     Enterprise Autodesk Master Purge Script

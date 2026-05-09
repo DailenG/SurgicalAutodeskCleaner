@@ -1,4 +1,4 @@
-function Restore-SACUserProfile {
+﻿function Restore-SACUserProfile {
 <#
 .SYNOPSIS
     Lists, restores, or purges Roaming profile backups created by Reset-SACUserProfile.
@@ -84,14 +84,14 @@ function Restore-SACUserProfile {
         $OriginalPath = $BackupPath -replace "_SAC_BACKUP_\d{8}_\d{6}$", ""
 
         if (Test-Path $OriginalPath) {
-            Write-Msg "Cannot restore — original path already exists: $OriginalPath" "Error"
+            Write-Msg "Cannot restore - original path already exists: $OriginalPath" "Error"
             Write-Msg "Remove or rename the existing folder first, then retry." "Warning"
             return
         }
 
         try {
             Rename-Item -Path $BackupPath -NewName $OriginalPath -ErrorAction Stop
-            Write-Msg "Restored: $BackupPath → $OriginalPath" "Success"
+            Write-Msg "Restored: $BackupPath -> $OriginalPath" "Success"
         } catch {
             Write-Msg "Restore failed: $($_.Exception.Message)" "Error"
         }
@@ -120,7 +120,7 @@ function Restore-SACUserProfile {
                 Remove-Item $backup.FullName -Recurse -Force -ErrorAction Stop
                 Write-Msg "Purged backup: $($backup.FullName)" "Success"
             } catch {
-                Write-Msg "Failed to purge: $($backup.FullName) — $($_.Exception.Message)" "Error"
+                Write-Msg "Failed to purge: $($backup.FullName) - $($_.Exception.Message)" "Error"
             }
         }
         Write-Host "`n[*] Backup purge complete.`n" -ForegroundColor Green
