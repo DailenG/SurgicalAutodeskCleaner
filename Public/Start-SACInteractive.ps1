@@ -249,14 +249,14 @@ function Start-SACInteractive {
 
         # Box-drawing characters generated at runtime via [char] casts.
         # Source file stays pure 7-bit ASCII - no BOM or encoding dependency.
-        $TL = [char]0x2554  # top-left corner
-        $TR = [char]0x2557  # top-right corner
-        $BL = [char]0x255A  # bottom-left corner
-        $BR = [char]0x255D  # bottom-right corner
-        $ML = [char]0x2560  # mid-left tee
-        $MR = [char]0x2563  # mid-right tee
-        $H  = [char]0x2550  # horizontal double line
-        $V  = [char]0x2551  # vertical double line
+        $TL = [string][char]0x2554  # top-left corner
+        $TR = [string][char]0x2557  # top-right corner
+        $BL = [string][char]0x255A  # bottom-left corner
+        $BR = [string][char]0x255D  # bottom-right corner
+        $ML = [string][char]0x2560  # mid-left tee
+        $MR = [string][char]0x2563  # mid-right tee
+        $H  = [string][char]0x2550  # horizontal double line
+        $V  = [string][char]0x2551  # vertical double line
 
         # Fixed inner width (between the vertical borders) = 60 chars
         $W = 60
@@ -277,7 +277,7 @@ function Start-SACInteractive {
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.0"
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.4"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
