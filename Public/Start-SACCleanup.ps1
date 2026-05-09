@@ -257,7 +257,7 @@ function Start-SACCleanup {
                         continue
                     }
 
-                    $FullArgs = "$($Arguments) /qn /quiet /norestart --mode unattended".Trim()
+                    $FullArgs = "$($Arguments) -q --silent /qn /quiet /norestart --mode unattended".Trim()
                 
                     try {
                         $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
