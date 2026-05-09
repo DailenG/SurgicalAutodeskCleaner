@@ -1,4 +1,4 @@
-﻿function Reset-SACLicensing {
+function Reset-SACLicensing {
 <#
 .SYNOPSIS
     Wipes Autodesk licensing data to force a clean re-authentication.
@@ -88,13 +88,30 @@
     Write-Msg "==========================================" "Info"
 
     if (Test-Interactive) {
-        Write-Host "`nThis will wipe all Autodesk licensing tokens and force re-authentication." -ForegroundColor Cyan
+        Write-Msg "Checking for running Autodesk applications..." "Info"
+        $Running = Get-Process | Where-Object { 
+            try { ($_.Path -match "Autodesk") -or ($_.Description -match "Autodesk") -or ($_.Company -match "Autodesk") } catch { $false }
+        }
+
+        if ($Running) {
+            Write-Host "`n[!] WARNING: The following Autodesk processes are still running:" -ForegroundColor Red
+            $Running | Select-Object -Property Name, Description -Unique | ForEach-Object {
+                Write-Host "    - $($_.Name) ($($_.Description))" -ForegroundColor Yellow
+            }
+            Write-Host "`nPlease close all Autodesk applications before resetting licensing.`n" -ForegroundColor Red
+            Stop-Transcript | Out-Null
+            return
+        }
+
+        Write-Host "`n[!] CRITICAL: This will wipe all Autodesk licensing tokens and force re-authentication." -ForegroundColor Yellow
+        Write-Host "    Users will be logged out of all Autodesk products on this machine." -ForegroundColor Yellow
         if ($IncludeFlexNet) {
-            Write-Host "FlexNet Autodesk stubs will also be removed." -ForegroundColor Yellow
+            Write-Host "    [!] FLEXNET STUBS WILL BE REMOVED." -ForegroundColor Red
         }
         Write-Host ""
-        $resp = Read-Host "Type 'YES' to proceed"
-        if ($resp -ne "YES") {
+        
+        $resp = Read-Host "  Type 'LICENSING' to confirm"
+        if ($resp -ne "LICENSING") {
             Write-Msg "Aborted by user." "Warning"
             Stop-Transcript | Out-Null
             return
