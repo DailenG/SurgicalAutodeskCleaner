@@ -234,41 +234,56 @@ function Start-SACInteractive {
     while ($true) {
         Clear-Host
 
-        # Header
-        Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor DarkCyan
-        Write-Host "║        SURGICAL AUTODESK CLEANER                        ║" -ForegroundColor Cyan
-        Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor DarkCyan
-
-        if ($installedProducts -and $installedProducts.Count -gt 0) {
-            Write-Host "║  Detected Products:" -ForegroundColor DarkCyan -NoNewline
-            Write-Host (" " * 37) + "║" -ForegroundColor DarkCyan
-            foreach ($p in ($installedProducts | Select-Object -First 5)) {
-                $truncated = if ($p.Length -gt 52) { $p.Substring(0,49) + "..." } else { $p }
-                $padded = $truncated.PadRight(52)
-                Write-Host "║  " -ForegroundColor DarkCyan -NoNewline
-                Write-Host "  $padded" -ForegroundColor Gray -NoNewline
-                Write-Host "║" -ForegroundColor DarkCyan
-            }
-            if ($installedProducts.Count -gt 5) {
-                $more = "  ...and $($installedProducts.Count - 5) more".PadRight(54)
-                Write-Host "║$more║" -ForegroundColor DarkCyan
-            }
-        } else {
-            Write-Host "║  No versioned Autodesk products detected on this machine.║" -ForegroundColor DarkCyan
+        # Fixed inner width (between the ║ borders) = 60 chars
+        $W = 60
+        function Write-BoxLine {
+            param(
+                [string]$Text = "",
+                [string]$Color = "Cyan",
+                [string]$BorderColor = "DarkCyan"
+            )
+            $inner = " $Text".PadRight($W)
+            Write-Host "║" -ForegroundColor $BorderColor -NoNewline
+            Write-Host $inner -ForegroundColor $Color -NoNewline
+            Write-Host "║" -ForegroundColor $BorderColor
         }
 
-        Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor DarkCyan
-        Write-Host "║                                                          ║" -ForegroundColor DarkCyan
-        Write-Host "║  [1]  Surgical Cleanup      Targeted uninstall           ║" -ForegroundColor DarkCyan
-        Write-Host "║  [2]  Master Purge          Scorched-earth full removal  ║" -ForegroundColor DarkCyan
-        Write-Host "║  [3]  Reset User Profile    Rename/clear AppData & reg   ║" -ForegroundColor DarkCyan
-        Write-Host "║  [4]  Reset Licensing       Wipe CLM & token cache       ║" -ForegroundColor DarkCyan
-        Write-Host "║  [5]  Pre-Flight Scan       Simulate & export CSV report  ║" -ForegroundColor DarkCyan
-        Write-Host "║  [6]  Restore User Profile  List/restore SAC backups     ║" -ForegroundColor DarkCyan
-        Write-Host "║  [Q]  Quit                                               ║" -ForegroundColor DarkCyan
-        Write-Host "║                                                          ║" -ForegroundColor DarkCyan
-        Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor DarkCyan
+        $border     = "═" * $W
+        $borderLine = "║" + (" " * $W) + "║"
+
+        # ── Top border + title ──
+        Write-Host "╔$border╗" -ForegroundColor DarkCyan
+        Write-BoxLine -Text ("  SURGICAL AUTODESK CLEANER  v1.1.0").PadLeft(($W + "  SURGICAL AUTODESK CLEANER  v1.1.0".Length) / 2) -Color "Cyan"
+        Write-Host "╠$border╣" -ForegroundColor DarkCyan
+
+        # ── Detected products ──
+        if ($installedProducts -and $installedProducts.Count -gt 0) {
+            Write-BoxLine -Text "Detected Products:" -Color "DarkCyan"
+            foreach ($p in ($installedProducts | Select-Object -First 5)) {
+                $truncated = if ($p.Length -gt ($W - 4)) { $p.Substring(0, $W - 7) + "..." } else { $p }
+                Write-BoxLine -Text "  $truncated" -Color "Gray"
+            }
+            if ($installedProducts.Count -gt 5) {
+                Write-BoxLine -Text "  ...and $($installedProducts.Count - 5) more" -Color "DarkGray"
+            }
+        } else {
+            Write-BoxLine -Text "  No versioned Autodesk products detected." -Color "Yellow"
+        }
+
+        # ── Menu options ──
+        Write-Host "╠$border╣" -ForegroundColor DarkCyan
+        Write-Host $borderLine -ForegroundColor DarkCyan
+        Write-BoxLine -Text "  [1]  Surgical Cleanup       Targeted uninstall by product/year"
+        Write-BoxLine -Text "  [2]  Master Purge           Scorched-earth full system removal"
+        Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData & reg"
+        Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache & FlexNet"
+        Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
+        Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
+        Write-BoxLine -Text "  [Q]  Quit"
+        Write-Host $borderLine -ForegroundColor DarkCyan
+        Write-Host "╚$border╝" -ForegroundColor DarkCyan
         Write-Host ""
+
 
         $choice = Read-Host "  Select an option"
 
