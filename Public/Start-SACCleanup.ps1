@@ -207,7 +207,7 @@ function Start-SACCleanup {
                 Invoke-SACCustomUninstall -App $App
             }
         } else {
-            # Non-GUID entry — attempt custom uninstall path
+            # Non-GUID entry - attempt custom uninstall path
             Invoke-SACCustomUninstall -App $App
         }
 
@@ -370,7 +370,7 @@ function Start-SACCleanup {
                     $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
-                Write-Msg "  [FULL uninstall] No parent removed — running uninstaller: $dn" "Info"
+                Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                 Invoke-SACUninstallEntry -App $item.App
             }
         }
@@ -389,7 +389,7 @@ function Start-SACCleanup {
                     $script:SACFailures += [PSCustomObject]@{ Component = "Evict Addon: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
-                Write-Msg "  [FULL uninstall] No parent removed — running uninstaller: $dn" "Info"
+                Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                 Invoke-SACUninstallEntry -App $item.App
             }
         }
