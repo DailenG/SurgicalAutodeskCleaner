@@ -64,7 +64,7 @@
     # Discover installed Autodesk products for header context
     # -------------------------------------------------------------------------
     function Get-InstalledAutodeskSummary {
-        # Known primary/parent product keywords — these float to the top
+        # Known primary/parent product keywords - these float to the top
         $PrimaryProducts = @(
             'AutoCAD','Revit','Civil 3D','Inventor','Navisworks','3ds Max','Maya',
             'Fusion','Vault','ReCap','Advance Steel','BIM 360','InfraWorks'
@@ -90,7 +90,7 @@
 
 
     # -------------------------------------------------------------------------
-    # Surgical Cleanup flow (product + year selection → Start-SACCleanup)
+    # Surgical Cleanup flow (product + year selection -> Start-SACCleanup)
     # -------------------------------------------------------------------------
     function Invoke-SurgicalCleanupFlow {
         param ([bool]$ScanOnly = $false)
@@ -154,7 +154,7 @@
             if (-not $SelectedYears) { Write-Host "No years selected." -ForegroundColor Red; return }
             $SelectedProducts = $AllAppNames
         } else {
-            $SelectedYears = Invoke-SACSelection -Items $AvailableYears -Title "Step 1 of 2 — Select Target Years"
+            $SelectedYears = Invoke-SACSelection -Items $AvailableYears -Title "Step 1 of 2 - Select Target Years"
             if (-not $SelectedYears) { Write-Host "No years selected." -ForegroundColor Red; return }
 
             $FilteredProducts = @()
@@ -166,7 +166,7 @@
             }
             $FilteredProducts = $FilteredProducts | Sort-Object
 
-            $SelectedProducts = Invoke-SACSelection -Items $FilteredProducts -Title "Step 2 of 2 — Select Products for $($SelectedYears -join ', ')"
+            $SelectedProducts = Invoke-SACSelection -Items $FilteredProducts -Title "Step 2 of 2 - Select Products for $($SelectedYears -join ', ')"
             if (-not $SelectedProducts) { Write-Host "No products selected." -ForegroundColor Red; return }
         }
 
@@ -247,8 +247,20 @@
     while ($true) {
         Clear-Host
 
-        # Fixed inner width (between the ║ borders) = 60 chars
+        # Box-drawing characters generated at runtime via [char] casts.
+        # Source file stays pure 7-bit ASCII - no BOM or encoding dependency.
+        $TL = [char]0x2554  # top-left corner
+        $TR = [char]0x2557  # top-right corner
+        $BL = [char]0x255A  # bottom-left corner
+        $BR = [char]0x255D  # bottom-right corner
+        $ML = [char]0x2560  # mid-left tee
+        $MR = [char]0x2563  # mid-right tee
+        $H  = [char]0x2550  # horizontal double line
+        $V  = [char]0x2551  # vertical double line
+
+        # Fixed inner width (between the vertical borders) = 60 chars
         $W = 60
+
         function Write-BoxLine {
             param(
                 [string]$Text = "",
@@ -256,20 +268,22 @@
                 [string]$BorderColor = "DarkCyan"
             )
             $inner = " $Text".PadRight($W)
-            Write-Host "║" -ForegroundColor $BorderColor -NoNewline
+            Write-Host $V -ForegroundColor $BorderColor -NoNewline
             Write-Host $inner -ForegroundColor $Color -NoNewline
-            Write-Host "║" -ForegroundColor $BorderColor
+            Write-Host $V -ForegroundColor $BorderColor
         }
 
-        $border     = "═" * $W
-        $borderLine = "║" + (" " * $W) + "║"
+        $border     = $H * $W
+        $borderLine = $V + (" " * $W) + $V
 
-        # ── Top border + title ──
-        Write-Host "╔$border╗" -ForegroundColor DarkCyan
-        Write-BoxLine -Text ("  SURGICAL AUTODESK CLEANER  v1.1.0").PadLeft(($W + "  SURGICAL AUTODESK CLEANER  v1.1.0".Length) / 2) -Color "Cyan"
-        Write-Host "╠$border╣" -ForegroundColor DarkCyan
+        # Top border + title
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.0"
+        $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
+        Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
+        Write-BoxLine -Text $titlePad -Color "Cyan"
+        Write-Host "$ML$border$MR" -ForegroundColor DarkCyan
 
-        # ── Detected products ──
+        # Detected products
         if ($installedProducts -and $installedProducts.Count -gt 0) {
             Write-BoxLine -Text "Detected Products:" -Color "DarkCyan"
             foreach ($p in ($installedProducts | Select-Object -First 5)) {
@@ -283,9 +297,9 @@
             Write-BoxLine -Text "  No versioned Autodesk products detected." -Color "Yellow"
         }
 
-        # ── Menu options ──
-        Write-Host "╠$border╣" -ForegroundColor DarkCyan
-        Write-Host $borderLine -ForegroundColor DarkCyan
+        # Menu options
+        Write-Host "$ML$border$MR" -ForegroundColor DarkCyan
+        Write-Host $borderLine    -ForegroundColor DarkCyan
         Write-BoxLine -Text "  [1]  Surgical Cleanup       Targeted uninstall by product/year"
         Write-BoxLine -Text "  [2]  Master Purge           Scorched-earth full system removal"
         Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData and reg"
@@ -293,10 +307,9 @@
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
         Write-BoxLine -Text "  [Q]  Quit"
-        Write-Host $borderLine -ForegroundColor DarkCyan
-        Write-Host "╚$border╝" -ForegroundColor DarkCyan
+        Write-Host $borderLine    -ForegroundColor DarkCyan
+        Write-Host "$BL$border$BR" -ForegroundColor DarkCyan
         Write-Host ""
-
 
         $choice = Read-Host "  Select an option"
 
@@ -309,7 +322,7 @@
             }
 
             "2" {
-                Write-Host "`n  *** MASTER PURGE — This will remove ALL Autodesk software ***" -ForegroundColor Red
+                Write-Host "`n  *** MASTER PURGE - This will remove ALL Autodesk software ***" -ForegroundColor Red
                 Write-Host "  This action is irreversible. All products, services, and" -ForegroundColor Yellow
                 Write-Host "  registry data will be forcefully removed from this machine.`n" -ForegroundColor Yellow
                 $confirm = Read-Host "  Type 'PURGE' to confirm"
