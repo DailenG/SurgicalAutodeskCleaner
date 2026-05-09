@@ -30,9 +30,13 @@ function Start-SACInteractive {
                 }
             }
             if (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue) {
-                $selected = $Items | Out-ConsoleGridView -Title $Title -OutputMode Multiple
-                if ($selected) { return @($selected) }
-                return @()
+                try {
+                    $selected = $Items | Out-ConsoleGridView -Title $Title -OutputMode Multiple -ErrorAction Stop
+                    if ($selected) { return @($selected) }
+                    return @()
+                } catch {
+                    Write-Host "`n[!] UI Rendering failed. Falling back to native console menu..." -ForegroundColor Yellow
+                }
             }
         }
         
