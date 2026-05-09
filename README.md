@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/SurgicalAutodeskCleaner.svg)](https://www.powershellgallery.com/packages/SurgicalAutodeskCleaner)
+[![DeepWiki](https://img.shields.io/badge/Docs-DeepWiki-blue)](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)
 
 A powerful, highly targeted, enterprise-grade PowerShell module designed to surgically remove technical debt from CAD/BIM workstations by cleanly uninstalling legacy Autodesk products. 
 
@@ -70,7 +71,7 @@ Start-SACPurge -Silent
 
 For extensive documentation regarding enterprise deployment strategies, logging architecture, and error code resolution, please refer to our internal DeepWiki:
 
-**[DeepWiki - Surgical Autodesk Cleaner Implementation Guide](https://deepwiki.internal/docs/SurgicalAutodeskCleaner)**
+**[DeepWiki - Surgical Autodesk Cleaner Implementation Guide](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)**
 
 ---
 
