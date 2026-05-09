@@ -47,22 +47,20 @@ The surgical strike weapon. Designed for RMM deployment (like N-Central) or back
 
 ```powershell
 # Scenario: Silently target a specific cluster of products for a defined range of older years
-Start-SACCleanup -TargetProducts "AutoCAD", "Civil 3D" -TargetYears 2018, 2019, 2020 -Silent
-```
+Start-SACCleanup -TargetProducts "AutoCAD", "Civil 3D" -TargetYears 2018, 2019, 2020
 
 #### Parameters:
 - `-TargetProducts`: Array of strings. The script implicitly uses wildcards (e.g., `"Revit"` becomes `*Revit*`).
 - `-TargetYears`: Array of integers to target specific release versions.
 - `-AnyVendor`: A switch to bypass the "Autodesk" vendor failsafe. 
 - `-AdditionalVendors`: Array of strings to expand the failsafe (e.g., `-AdditionalVendors "MyPluginCorp"`).
-- `-Silent`: Bypasses confirmation prompts. Mandatory for RMM execution.
 
 ### 3. `Start-SACPurge`
 The scorched-earth tool. When a machine is completely "bricked" due to a corrupt Autodesk installation, this function hard-kills services, disables scheduled tasks, removes ODIS/Licensing components, purges SQL Server LocalDB instances, and recursively wipes the registry hive.
 
 ```powershell
 # WARNING: This will terminate all Autodesk applications and remove them forcefully
-Start-SACPurge -Silent
+Start-SACPurge
 ```
 
 ---

@@ -19,10 +19,6 @@ function Start-SACCleanup {
 
 .PARAMETER TargetYears
     An array of integers representing the release years to target.
-    
-.PARAMETER Silent
-    Switch parameter. Bypasses all interactive confirmation prompts. 
-    Mandatory for deployment via RMM (e.g., N-Central) or background execution.
 
 .EXAMPLE
     # Scenario 1: The Default Run (Interactive)
@@ -34,11 +30,10 @@ function Start-SACCleanup {
 
 .EXAMPLE
     # Scenario 2: RMM Silent Deployment (Default Targeting)
-    .\Autodesk-Cleanup.ps1 -Silent
+    Start-SACCleanup
     
     # Behavior: 
-    # Bypasses the confirmation prompt. Ideal for an N-Central scheduled task 
-    # cleaning up legacy tech debt across a tenant.
+    # Ideal for an N-Central scheduled task cleaning up legacy tech debt across a tenant.
 
 .EXAMPLE
     # Scenario 3: Surgical Single-Product Strike
@@ -80,8 +75,7 @@ function Start-SACCleanup {
         ),
         [int[]]$TargetYears = (2015..2023),
         [string[]]$AdditionalVendors = @(),
-        [switch]$AnyVendor,
-        [switch]$Silent
+        [switch]$AnyVendor
     )
 
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -121,10 +115,6 @@ function Start-SACCleanup {
         param ([string]$Message)
         $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
         Add-Content -Path $DebugLog -Value "$($TimeStamp) [DEBUG] $($Message)"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
     }
 
     function Invoke-SurgicalDirectoryCleanup {
@@ -321,20 +311,8 @@ function Start-SACCleanup {
     Write-Msg " Debug Log:  $($DebugLog)" "Info"
     Write-Msg "==========================================" "Info"
 
-    if (Test-Interactive) {
-        Write-Host "`nTarget Products: $($TargetProducts -join ', ')" -ForegroundColor Cyan
-        Write-Host "Target Years: $($TargetYears -join ', ')`n" -ForegroundColor Cyan
-        Write-Host "WARNING: This will forcefully remove the specified versions.`n" -ForegroundColor Yellow
-        $Response = Read-Host "Type 'YES' to proceed"
-        if ($Response -ne "YES") { 
-            Write-Msg "Execution aborted by user." "Warning"
-            Stop-Transcript | Out-Null
-            exit 
-        }
-    }
-    else {
-        Write-Msg "Running in non-interactive/silent mode." "Info"
-    }
+    Write-Host "`nTargeting Products: $($TargetProducts -join ', ')" -ForegroundColor Cyan
+    Write-Host "Targeting Years: $($TargetYears -join ', ')`n" -ForegroundColor Cyan
 
     foreach ($product in $TargetProducts) {
         foreach ($year in $TargetYears) {

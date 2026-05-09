@@ -11,8 +11,7 @@ function Start-SACPurge {
     [CmdletBinding()]
     param (
         [string[]]$AdditionalVendors = @(),
-        [switch]$AnyVendor,
-        [switch]$Silent
+        [switch]$AnyVendor
     )
 
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -82,10 +81,6 @@ function Start-SACPurge {
         $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
         # Writing to a separate debug file to prevent IO locks with Start-Transcript
         Add-Content -Path $DebugLog -Value "$($TimeStamp) [DEBUG] $($Message)"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
     }
 
     function Invoke-DesktopCleanup {
@@ -388,19 +383,6 @@ function Start-SACPurge {
     Write-Msg " Transcript: $($TranscriptLog)" "Info"
     Write-Msg " Debug Log:  $($DebugLog)" "Info"
     Write-Msg "==========================================" "Info"
-
-    if (Test-Interactive) {
-        Write-Host "`nWARNING: This will forcefully terminate and remove all Autodesk applications.`n" -ForegroundColor Yellow
-        $Response = Read-Host "Type 'YES' to proceed"
-        if ($Response -ne "YES") { 
-            Write-Msg "Execution aborted by user." "Warning"
-            Stop-Transcript | Out-Null
-            exit 
-        }
-    }
-    else {
-        Write-Msg "Running in non-interactive/silent mode." "Info"
-    }
 
     foreach ($product in $RemoveVersions) {
         Invoke-UninstallAutodeskProduct -ProductName $product.Name -Versions $product.Versions

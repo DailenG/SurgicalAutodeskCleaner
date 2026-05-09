@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.1'
+    ModuleVersion     = '1.0.2'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -38,7 +38,7 @@ Features:
 - Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
 - Start-SACPurge: Scorched-earth registry and file system master purge.
 
-Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
+Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020
 
 DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
 
