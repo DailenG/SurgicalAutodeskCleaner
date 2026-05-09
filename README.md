@@ -4,9 +4,11 @@
 [![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/SurgicalAutodeskCleaner.svg)](https://www.powershellgallery.com/packages/SurgicalAutodeskCleaner)
 [![DeepWiki](https://img.shields.io/badge/Docs-DeepWiki-blue)](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)
 
-A powerful, highly targeted, enterprise-grade PowerShell module designed to surgically remove technical debt from CAD/BIM workstations by cleanly uninstalling legacy Autodesk products. 
+A powerful, highly targeted, enterprise-grade PowerShell module designed to surgically remove technical debt from CAD/BIM workstations by cleanly uninstalling legacy Autodesk products — and resetting user profile data and licensing when things go sideways.
 
 Published and maintained by **Dailen**.
+
+---
 
 ## Why this module?
 
@@ -14,64 +16,208 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 
 **Surgical Autodesk Cleaner** takes a different approach:
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
-- **Fail-Safe Mechanism:** Verifies the vendor and product names against strict patterns, preventing accidental removal of non-Autodesk tools.
+- **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
 - **Deep Cleansing:** Purges orphaned installation directories and handles cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
+- **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
+- **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
 
 ---
 
 ## Installation
 
-You can install the module directly from the PowerShell Gallery:
-
 ```powershell
 Install-Module -Name SurgicalAutodeskCleaner -Scope CurrentUser -Force
 ```
 
-## Functions
+---
 
-This module exports three primary functions for different deployment scenarios:
-
-### 1. `Start-SACInteractive`
-The easiest way to use the tool manually. Run this command with no parameters to launch an interactive, dynamic menu.
-- Pre-scans the registry for installed Autodesk components.
-- Allows you to select one, multiple, or **ALL** target years found on the system.
-- Allows you to select one, multiple, or **ALL** products matching those years.
-- Hands the execution off to `Start-SACCleanup`.
+## Quick Start
 
 ```powershell
-Start-SACInteractive
-```
+# Launch the full interactive menu (recommended for manual use)
+Start-SAC
 
-### 2. `Start-SACCleanup`
-The surgical strike weapon. Designed for RMM deployment (like N-Central) or background execution. 
+# Surgical cleanup via RMM/headless — no prompts
+Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2020, 2021 -Silent
 
-```powershell
-# Scenario: Silently target a specific cluster of products for a defined range of older years
-Start-SACCleanup -TargetProducts "AutoCAD", "Civil 3D" -TargetYears 2018, 2019, 2020 -Silent
-```
+# Reset a user's Autodesk profile data after a bad upgrade
+Reset-SACUserProfile -TargetProducts "AutoCAD" -TargetYears 2022
 
-#### Parameters:
-- `-TargetProducts`: Array of strings. The script implicitly uses wildcards (e.g., `"Revit"` becomes `*Revit*`).
-- `-TargetYears`: Array of integers to target specific release versions.
-- `-AnyVendor`: A switch to bypass the "Autodesk" vendor failsafe. 
-- `-AdditionalVendors`: Array of strings to expand the failsafe (e.g., `-AdditionalVendors "MyPluginCorp"`).
-- `-Silent`: Bypasses confirmation prompts. Mandatory for RMM execution.
-
-### 3. `Start-SACPurge`
-The scorched-earth tool. When a machine is completely "bricked" due to a corrupt Autodesk installation, this function hard-kills services, disables scheduled tasks, removes ODIS/Licensing components, purges SQL Server LocalDB instances, and recursively wipes the registry hive.
-
-```powershell
-# WARNING: This will terminate all Autodesk applications and remove them forcefully
-Start-SACPurge -Silent
+# Wipe licensing tokens to force re-authentication
+Reset-SACLicensing -Silent
 ```
 
 ---
 
-## Documentation & DeepWiki References
+## Functions
 
-For extensive documentation regarding enterprise deployment strategies, logging architecture, and error code resolution, please refer to our internal DeepWiki:
+### 1. `Start-SACInteractive` *(Alias: `Start-SAC`)*
 
-**[DeepWiki - Surgical Autodesk Cleaner Implementation Guide](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)**
+The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
+
+Supports **Out-ConsoleGridView** (PowerShell 7+) for multi-select with automatic install of `Microsoft.PowerShell.ConsoleGuiTools` if not present. Falls back to a native text-based menu if running headless or in a limited console.
+
+```powershell
+Start-SAC
+```
+
+**Menu options:**
+| Option | Action |
+|--------|--------|
+| `[1]` Surgical Cleanup | Targeted uninstall by product + year |
+| `[2]` Master Purge | Scorched-earth full system removal |
+| `[3]` Reset User Profile | Rename/clear per-user AppData & registry |
+| `[4]` Reset Licensing | Wipe CLM, token cache & FlexNet stubs |
+| `[5]` Pre-Flight Scan | Simulate cleanup and export CSV report |
+| `[6]` Restore User Profile | List and restore SAC backup folders |
+
+---
+
+### 2. `Start-SACCleanup`
+
+The surgical strike engine. Designed for RMM deployment (N-Central, ConnectWise Automate, Intune) or silent background execution. Uninstalls only the specified products and years, leaving shared services and newer installations intact.
+
+```powershell
+# Remove AutoCAD and Civil 3D 2019/2020 silently
+Start-SACCleanup -TargetProducts "AutoCAD", "Civil 3D" -TargetYears 2019, 2020 -Silent
+
+# Remove all Revit versions found (default year range 2015-2023)
+Start-SACCleanup -TargetProducts "Revit"
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-TargetProducts` | `string[]` | Product name substrings to target. Wildcards are implicit (`"AutoCAD"` → `*AutoCAD*`). |
+| `-TargetYears` | `int[]` | Release years to target. Defaults to `2015..2023`. |
+| `-Silent` | `switch` | Bypasses the interactive confirmation prompt. Required for RMM execution. |
+| `-AnyVendor` | `switch` | Bypasses the Autodesk vendor failsafe. Use with care. |
+| `-AdditionalVendors` | `string[]` | Expands the vendor allowlist (e.g., `-AdditionalVendors "MyPluginCorp"`). |
+
+---
+
+### 3. `Start-SACPurge`
+
+The scorched-earth tool. When a machine is completely bricked by a corrupt Autodesk installation, this function hard-kills services, disables all Autodesk scheduled tasks, removes ODIS/Licensing components, purges SQL Server LocalDB instances, and recursively wipes the full Autodesk registry hive using `reg.exe` (bypasses PowerShell's StackOverflow limitation on deep recursive keys).
+
+> ⚠️ **This is irreversible.** Use only when targeted cleanup is not an option.
+
+```powershell
+Start-SACPurge -Silent
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-Silent` | `switch` | Bypasses the interactive confirmation prompt. |
+| `-AnyVendor` | `switch` | Bypasses the Autodesk vendor failsafe. |
+| `-AdditionalVendors` | `string[]` | Expands the vendor allowlist. |
+
+---
+
+### 4. `Start-SACScan`
+
+A non-destructive pre-flight tool. Scans the machine for what `Start-SACCleanup` *would* remove and exports a detailed CSV to the desktop. No changes are made to the system.
+
+```powershell
+Start-SACScan
+```
+
+The exported CSV includes: Action type, Component type, Target product, Target year, Display name, and the full uninstall string or path.
+
+---
+
+### 5. `Reset-SACUserProfile`
+
+Resets per-user Autodesk application data to give a user a clean start — without destroying their custom work.
+
+**Default behavior:**
+- `AppData\Roaming\Autodesk\<Product>\<Year>` → **Renamed** with a `_SAC_BACKUP_<timestamp>` suffix (preserves `.cuix` layouts, plot styles, templates)
+- `AppData\Local\Autodesk\<Product>\<Year>` → **Deleted** outright (pure cache and crash logs)
+- `HKU:\<SID>\Software\Autodesk\<Product>` → **Removed** (window positions, recent file paths)
+
+```powershell
+# Reset all profiles for AutoCAD 2020 across all users
+Reset-SACUserProfile -TargetProducts "AutoCAD" -TargetYears 2020
+
+# Reset for a specific user, delete Roaming instead of renaming
+Reset-SACUserProfile -TargetUser "jsmith" -DeleteRoaming -Silent
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-TargetProducts` | `string[]` | Products to target. Defaults to all Autodesk products found. |
+| `-TargetYears` | `int[]` | Years to target. Defaults to all years found. |
+| `-TargetUser` | `string` | Specific username. Defaults to all local profiles. |
+| `-DeleteRoaming` | `switch` | Delete Roaming folders instead of renaming. **Destroys customizations.** |
+| `-SkipRegistry` | `switch` | Skip clearing HKCU/HKU Autodesk registry keys. |
+| `-Silent` | `switch` | Bypasses the confirmation prompt. |
+
+---
+
+### 6. `Reset-SACLicensing`
+
+Wipes all Autodesk licensing tokens and forces a clean re-authentication on next launch. Resolves common issues like "Autodesk keeps asking for activation," "License not found," and stuck multi-seat reservations.
+
+**What it clears:**
+- `C:\ProgramData\Autodesk\CLM\` — Central Licensing Manager data
+- `C:\ProgramData\Autodesk\AdskLicensing\` — ODIS licensing service state
+- `C:\Users\*\AppData\Roaming\Autodesk\CLM\` — Per-user license token cache
+- `C:\Users\*\AppData\Local\Autodesk\Web Services\` — SSO/Autodesk Account JWT tokens
+- `C:\ProgramData\FLEXnet\adsk*` *(optional)* — FlexNet seat reservation stubs
+
+The `AdskLicensing` service is stopped before the wipe and restarted afterward.
+
+```powershell
+# Standard licensing reset
+Reset-SACLicensing
+
+# Include FlexNet Autodesk stubs, silent
+Reset-SACLicensing -IncludeFlexNet -Silent
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-IncludeFlexNet` | `switch` | Also removes `adsk*` files from `C:\ProgramData\FLEXnet\`. Off by default since FLEXnet is shared. |
+| `-SkipServiceRestart` | `switch` | Do not restart `AdskLicensing` after the wipe. |
+| `-Silent` | `switch` | Bypasses the confirmation prompt. |
+
+---
+
+### 7. `Restore-SACUserProfile`
+
+Lists, restores, or purges the `_SAC_BACKUP_<timestamp>` folders created by `Reset-SACUserProfile`.
+
+```powershell
+# List all backups on the machine
+Restore-SACUserProfile
+
+# Restore a specific backup
+Restore-SACUserProfile -Restore -BackupPath "C:\Users\jsmith\AppData\Roaming\Autodesk\AutoCAD 2020_SAC_BACKUP_20250509_143000"
+
+# Remove all backups to free disk space
+Restore-SACUserProfile -Purge -Silent
+```
+
+---
+
+## Logging
+
+All functions write dual-channel logs to `C:\temp\`:
+- **Transcript log** — Standard console output captured via `Start-Transcript`
+- **Debug log** — Background IO exceptions and verbose details written silently to prevent console noise
+
+Log directories are timestamped per-run (e.g., `C:\temp\AutodeskCleanup_20250509_143022\`).
+
+---
+
+## Documentation & DeepWiki
+
+For extensive documentation on enterprise deployment strategies, logging architecture, and error code resolution:
+
+**[DeepWiki — Surgical Autodesk Cleaner](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)**
 
 ---
 
