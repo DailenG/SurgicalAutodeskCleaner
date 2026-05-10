@@ -241,6 +241,17 @@ function Reset-SACUserProfile {
         $Summary | Format-Table User, Action, Result, Path -AutoSize
     }
 
+    if ($script:SACFailures.Count -gt 0) {
+        Write-Host "`n[!] FAILURES DETECTED:" -ForegroundColor Red
+        Write-Host "    (Note: These items may have been forcibly evicted/removed despite errors)" -ForegroundColor Gray
+        foreach ($fail in $script:SACFailures) {
+            Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
+            Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "`n[*] All operations completed successfully.`n" -ForegroundColor Green
+    }
+
     # Persist outcome so the interactive menu can show a status badge on return
     $AttentionFile = Join-Path $LogDir "AttentionItems.txt"
     if ($script:SACFailures.Count -gt 0) {
@@ -248,6 +259,8 @@ function Reset-SACUserProfile {
             "AUTODESK PROFILE RESET - ITEMS REQUIRING ATTENTION",
             "Timestamp: $(Get-Date)",
             "Log Directory: $LogDir",
+            "Note: Despite the errors below, these components may have been forcibly",
+            "evicted or surgically removed from the system by the SAC engine.",
             "----------------------------------------------------------",
             ""
         )

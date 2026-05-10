@@ -477,6 +477,7 @@ function Start-SACCleanup {
 
     if ($criticals.Count -gt 0) {
         Write-Host "`n[!] FAILURES REQUIRING ATTENTION:" -ForegroundColor Red
+        Write-Host "    (Note: These items may have been forcibly evicted/removed despite errors)" -ForegroundColor Gray
         foreach ($fail in $criticals) {
             Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
             Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
@@ -505,6 +506,8 @@ function Start-SACCleanup {
             "SURGICAL AUTODESK CLEANER - ITEMS REQUIRING ATTENTION",
             "Timestamp: $(Get-Date)",
             "Log Directory: $LogDir",
+            "Note: Despite the errors below, these components may have been forcibly",
+            "evicted or surgically removed from the system by the SAC engine.",
             "----------------------------------------------------------",
             ""
         )
