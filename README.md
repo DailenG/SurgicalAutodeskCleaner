@@ -18,8 +18,10 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
 - **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
 - **Deep Cleansing:** Purges orphaned installation directories and handles cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
+- **Robust Pathing:** Automatically detects and utilizes $env:TEMP if C:\temp is unavailable, ensuring deployment reliability on locked-down systems.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
 - **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
+- **Smart Logging:** Dual-channel logging with a dedicated "Attention Items" summary file that surfaces critical failures for easy review.
 - **PowerShell Core Optimized:** While fully compatible with PowerShell 5.1, the **Interactive Mode (TUI)** is best experienced in **PowerShell 7+**.
 
 ---
@@ -79,6 +81,7 @@ Start-SAC
 | `[4]` Reset Licensing | Wipe CLM, token cache & FlexNet stubs |
 | `[5]` Pre-Flight Scan | Simulate cleanup and export CSV report |
 | `[6]` Restore User Profile | List and restore SAC backup folders |
+| `[V]` View Attention Items | Open failure logs in Notepad (Conditional) |
 
 ---
 

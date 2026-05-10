@@ -11,6 +11,10 @@ function Start-SACCleanup {
     By default, it utilizes a dual-channel logging system:
     1. Console Transcript: Captures standard output for immediate review.
     2. Debug Log: Silently captures background IO exceptions to keep the console clean.
+    3. Attention Items: A targeted log of critical failures (AttentionItems.txt) created 
+       when uninstallation or registry eviction requires manual review.
+
+    Supports robust temporary pathing, falling back to $env:TEMP if C:\temp is unavailable.
 
 .PARAMETER TargetProducts
     An array of string values representing the Autodesk products to target. 

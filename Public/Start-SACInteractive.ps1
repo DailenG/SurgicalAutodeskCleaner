@@ -7,6 +7,9 @@ function Start-SACInteractive {
     Surgical Cleanup, Master Purge, User Profile Reset, Licensing Reset,
     Pre-Flight Scan, and Profile Backup Restore. Supports Out-ConsoleGridView
     on PowerShell 7+ with automatic fallback to a native console menu.
+
+    Includes a conditional "View Attention Items" menu option that surfaces
+    critical failure logs from the last run for immediate review.
 #>
     [CmdletBinding()]
     param(
@@ -284,7 +287,7 @@ function Start-SACInteractive {
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v1.3.0"
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.3.1"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"

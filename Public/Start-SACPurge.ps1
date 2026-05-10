@@ -7,6 +7,9 @@ function Start-SACPurge {
     purges registry/file remnants, and cleans desktops. Handles locked 
     files gracefully with dual-channel logging to prevent IO lock exceptions.
     Includes safe-evaluation regex removal of SQL Server LocalDB.
+
+    Supports robust temporary pathing, falling back to $env:TEMP if C:\temp is unavailable.
+    Creates an AttentionItems.txt log if any critical component failures are detected.
 #>
     [CmdletBinding()]
     param (

@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.3.0'
+    ModuleVersion     = '1.3.1'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -35,8 +35,8 @@
     Compatible with PowerShell 5.1 and 7.0+. Note: Interactive Mode (TUI) is best experienced in PowerShell 7+.
 
 Features:
-- Start-SACInteractive (Alias: Start-SAC): Full interactive main menu — Cleanup, Purge, Profile Reset, Licensing Reset, Scan, and Restore.
-- Start-SACCleanup: Surgical background removal tool for RMMs (e.g., N-Central, Automate).
+- Start-SACInteractive (Alias: Start-SAC): Full interactive main menu with a conditional "View Attention Items" log viewer.
+- Start-SACCleanup: Surgical background removal tool with robust $env:TEMP pathing.
 - Start-SACPurge: Scorched-earth registry and file system master purge.
 - Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
 - Reset-SACUserProfile: Resets per-user Autodesk AppData (rename Roaming, delete Local) for a clean-start experience without destroying user customizations.
