@@ -9,7 +9,9 @@ function Start-SACInteractive {
     on PowerShell 7+ with automatic fallback to a native console menu.
 #>
     [CmdletBinding()]
-    param()
+    param(
+        [switch]$ScanOnly
+    )
 
     # -------------------------------------------------------------------------
     # Shared helper: multi-select list (GridView on PS7+, text fallback)
@@ -244,6 +246,11 @@ function Start-SACInteractive {
     # -------------------------------------------------------------------------
     $installedProducts = Get-InstalledAutodeskSummary
 
+    if ($ScanOnly) {
+        Invoke-SurgicalCleanupFlow -ScanOnly $true
+        return
+    }
+
     while ($true) {
         Clear-Host
 
@@ -277,7 +284,7 @@ function Start-SACInteractive {
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.8"
+        $title     = "  SURGICAL AUTODESK CLEANER  v1.2.9"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -320,6 +327,9 @@ function Start-SACInteractive {
         Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache and FlexNet"
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
+        if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
+            Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color "Yellow"
+        }
         Write-BoxLine -Text "  [Q]  Quit"
         if ($PSVersionTable.PSVersion.Major -lt 7) {
             Write-Host $borderLine    -ForegroundColor DarkCyan
@@ -397,6 +407,16 @@ function Start-SACInteractive {
                 }
                 Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
                 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            }
+
+            "V" {
+                if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
+                    Write-Host "`nOpening Attention Items log in Notepad..." -ForegroundColor Cyan
+                    Start-Process "notepad.exe" -ArgumentList "`"$($script:SACLastRunStatus.AttentionItems)`""
+                } else {
+                    Write-Host "`nNo attention items found or log file missing." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 1
+                }
             }
 
             "Q" {

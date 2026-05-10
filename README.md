@@ -214,11 +214,12 @@ Restore-SACUserProfile -Purge -Silent
 
 ## Logging
 
-All functions write dual-channel logs to `C:\temp\`:
+All functions write dual-channel logs to `C:\temp\` (falling back to `$env:TEMP` if unavailable):
 - **Transcript log** — Standard console output captured via `Start-Transcript`
 - **Debug log** — Background IO exceptions and verbose details written silently to prevent console noise
+- **Attention Items** — A targeted log of critical failures, viewable directly from the interactive menu
 
-Log directories are timestamped per-run (e.g., `C:\temp\AutodeskCleanup_20250509_143022\`).
+Log directories are timestamped per-run (e.g., `...\AutodeskCleanup_20260510_183022\`).
 
 ---
 
