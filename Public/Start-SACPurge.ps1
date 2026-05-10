@@ -1,4 +1,4 @@
-﻿function Start-SACPurge {
+function Start-SACPurge {
     <#
 .SYNOPSIS
     Enterprise Autodesk Master Purge Script
@@ -52,7 +52,8 @@
 
     # --- Logging Setup ---
     $ToDate = (Get-Date -Format 'yyyyMMdd_HHmmss')
-    $LogDir = "C:\temp\AutodeskPurge_$($ToDate)"
+    $BaseTemp = if (Test-Path "C:\temp") { "C:\temp" } else { $env:TEMP }
+    $LogDir = Join-Path $BaseTemp "AutodeskPurge_$($ToDate)"
     New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
 
     $TranscriptLog = "$($LogDir)\PurgeTranscript.log"
@@ -473,15 +474,31 @@
     Write-Msg " PURGE COMPLETED in $($ElapsedTime)" "Success"
     Write-Msg "==========================================" "Info"
 
+    # Persist outcome so the interactive menu can show a status badge on return
+    $AttentionFile = Join-Path $LogDir "AttentionItems.txt"
     if ($script:SACFailures.Count -gt 0) {
-        Write-Host "`n[!] CRITICAL COMPONENT FAILURES DETECTED:" -ForegroundColor Red
+        $content = @(
+            "AUTODESK MASTER PURGE - ITEMS REQUIRING ATTENTION",
+            "Timestamp: $(Get-Date)",
+            "Log Directory: $LogDir",
+            "----------------------------------------------------------",
+            ""
+        )
         foreach ($fail in $script:SACFailures) {
-            Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
-            Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
+            $content += "[!] $($fail.Component)"
+            $content += "    Reason: $($fail.Reason)"
+            $content += ""
         }
-        Write-Host "`nPlease review the Debug Log for deeper diagnostics or resolve locks manually.`n" -ForegroundColor Red
-    } else {
-        Write-Host "`n[*] All operations completed successfully with no critical failures.`n" -ForegroundColor Green
+        $content | Out-File -FilePath $AttentionFile -Encoding utf8
+    }
+
+    $script:SACLastRunStatus = [PSCustomObject]@{
+        Operation      = 'Master Purge'
+        Criticals      = $script:SACFailures.Count
+        Warnings       = 0
+        Elapsed        = $ElapsedTime
+        LogDir         = $LogDir
+        AttentionItems = if ($script:SACFailures.Count -gt 0) { $AttentionFile } else { $null }
     }
 
     Stop-Transcript | Out-Null

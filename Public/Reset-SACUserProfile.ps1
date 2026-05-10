@@ -1,4 +1,4 @@
-﻿function Reset-SACUserProfile {
+function Reset-SACUserProfile {
 <#
 .SYNOPSIS
     Resets per-user Autodesk application data for a clean-start experience.
@@ -51,7 +51,8 @@
     $script:SACFailures = @()
 
     $ToDate    = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $LogDir    = "C:\temp\AutodeskProfileReset_$ToDate"
+    $BaseTemp = if (Test-Path "C:\temp") { "C:\temp" } else { $env:TEMP }
+    $LogDir = Join-Path $BaseTemp "AutodeskProfileReset_$ToDate"
     New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
     $DebugLog  = "$LogDir\ProfileResetDebug.log"
     $TranscriptLog = "$LogDir\ProfileResetTranscript.log"
@@ -240,18 +241,31 @@
         $Summary | Format-Table User, Action, Result, Path -AutoSize
     }
 
+    # Persist outcome so the interactive menu can show a status badge on return
+    $AttentionFile = Join-Path $LogDir "AttentionItems.txt"
     if ($script:SACFailures.Count -gt 0) {
-        Write-Host "`n[!] FAILURES DETECTED:" -ForegroundColor Red
+        $content = @(
+            "AUTODESK PROFILE RESET - ITEMS REQUIRING ATTENTION",
+            "Timestamp: $(Get-Date)",
+            "Log Directory: $LogDir",
+            "----------------------------------------------------------",
+            ""
+        )
         foreach ($fail in $script:SACFailures) {
-            Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
-            Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
+            $content += "[!] $($fail.Component)"
+            $content += "    Reason: $($fail.Reason)"
+            $content += ""
         }
-    } else {
-        Write-Host "`n[*] All operations completed successfully.`n" -ForegroundColor Green
+        $content | Out-File -FilePath $AttentionFile -Encoding utf8
     }
 
-    if (-not $DeleteRoaming -and ($Summary | Where-Object { $_.Action -like "*Roaming Backup*" })) {
-        Write-Host "[i] Roaming profiles have been backed up. Run Restore-SACUserProfile to view or restore them.`n" -ForegroundColor Cyan
+    $script:SACLastRunStatus = [PSCustomObject]@{
+        Operation      = 'Profile Reset'
+        Criticals      = $script:SACFailures.Count
+        Warnings       = 0
+        Elapsed        = $ElapsedTime
+        LogDir         = $LogDir
+        AttentionItems = if ($script:SACFailures.Count -gt 0) { $AttentionFile } else { $null }
     }
 
     Stop-Transcript | Out-Null

@@ -92,7 +92,8 @@ function Start-SACCleanup {
 
     # --- Logging Setup ---
     $ToDate = (Get-Date -Format 'yyyyMMdd_HHmmss')
-    $LogDir = "C:\temp\AutodeskCleanup_$($ToDate)"
+    $BaseTemp = if (Test-Path "C:\temp") { "C:\temp" } else { $env:TEMP }
+    $LogDir = Join-Path $BaseTemp "AutodeskCleanup_$($ToDate)"
     New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
 
     $TranscriptLog = "$($LogDir)\CleanupTranscript.log"
@@ -498,12 +499,30 @@ function Start-SACCleanup {
     }
 
     # Persist outcome so the interactive menu can show a status badge on return
+    $AttentionFile = Join-Path $LogDir "AttentionItems.txt"
+    if ($criticals.Count -gt 0) {
+        $content = @(
+            "SURGICAL AUTODESK CLEANER - ITEMS REQUIRING ATTENTION",
+            "Timestamp: $(Get-Date)",
+            "Log Directory: $LogDir",
+            "----------------------------------------------------------",
+            ""
+        )
+        foreach ($fail in $criticals) {
+            $content += "[!] $($fail.Component)"
+            $content += "    Reason: $($fail.Reason)"
+            $content += ""
+        }
+        $content | Out-File -FilePath $AttentionFile -Encoding utf8
+    }
+
     $script:SACLastRunStatus = [PSCustomObject]@{
-        Operation = 'Cleanup'
-        Criticals = $criticals.Count
-        Warnings  = $warnings.Count
-        Elapsed   = $ElapsedTime
-        LogDir    = $LogDir
+        Operation      = 'Cleanup'
+        Criticals      = $criticals.Count
+        Warnings       = $warnings.Count
+        Elapsed        = $ElapsedTime
+        LogDir         = $LogDir
+        AttentionItems = if ($criticals.Count -gt 0) { $AttentionFile } else { $null }
     }
 
     Stop-Transcript | Out-Null

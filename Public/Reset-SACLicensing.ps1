@@ -41,7 +41,8 @@ function Reset-SACLicensing {
     $script:SACFailures = @()
 
     $ToDate    = Get-Date -Format 'yyyyMMdd_HHmmss'
-    $LogDir    = "C:\temp\AutodeskLicenseReset_$ToDate"
+    $BaseTemp = if (Test-Path "C:\temp") { "C:\temp" } else { $env:TEMP }
+    $LogDir = Join-Path $BaseTemp "AutodeskLicenseReset_$ToDate"
     New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
     $DebugLog  = "$LogDir\LicenseResetDebug.log"
     $TranscriptLog = "$LogDir\LicenseResetTranscript.log"
@@ -211,15 +212,31 @@ function Reset-SACLicensing {
     Write-Msg " LICENSING RESET COMPLETED in $ElapsedTime" "Success"
     Write-Msg "==========================================" "Info"
 
+    # Persist outcome so the interactive menu can show a status badge on return
+    $AttentionFile = Join-Path $LogDir "AttentionItems.txt"
     if ($script:SACFailures.Count -gt 0) {
-        Write-Host "`n[!] FAILURES DETECTED:" -ForegroundColor Red
+        $content = @(
+            "AUTODESK LICENSING RESET - ITEMS REQUIRING ATTENTION",
+            "Timestamp: $(Get-Date)",
+            "Log Directory: $LogDir",
+            "----------------------------------------------------------",
+            ""
+        )
         foreach ($fail in $script:SACFailures) {
-            Write-Host "   - $($fail.Component)" -ForegroundColor Yellow
-            Write-Host "     Reason: $($fail.Reason)" -ForegroundColor DarkGray
+            $content += "[!] $($fail.Component)"
+            $content += "    Reason: $($fail.Reason)"
+            $content += ""
         }
-        Write-Host "`nPlease review the Debug Log: $DebugLog`n" -ForegroundColor Red
-    } else {
-        Write-Host "`n[*] All licensing data cleared. Autodesk will prompt for re-authentication on next launch.`n" -ForegroundColor Green
+        $content | Out-File -FilePath $AttentionFile -Encoding utf8
+    }
+
+    $script:SACLastRunStatus = [PSCustomObject]@{
+        Operation      = 'Licensing Reset'
+        Criticals      = $script:SACFailures.Count
+        Warnings       = 0
+        Elapsed        = $ElapsedTime
+        LogDir         = $LogDir
+        AttentionItems = if ($script:SACFailures.Count -gt 0) { $AttentionFile } else { $null }
     }
 
     Stop-Transcript | Out-Null
