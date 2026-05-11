@@ -10,6 +10,19 @@ Published and maintained by **Dailen**.
 
 ---
 
+## Screenshots
+
+### Main Menu
+![Main Menu](https://github.com/user-attachments/assets/010ebfc8-1d1b-4241-94b9-607086cb164e)
+
+### Product List Selection
+![Product List Selection](https://github.com/user-attachments/assets/337bbcba-81c5-4f56-ac56-cbff1a5d661b)
+
+### Year List Selection
+![Year List Selection](https://github.com/user-attachments/assets/8b0e5397-8747-4706-98a3-8e0ccda7aee9)
+
+---
+
 ## Why this module?
 
 Autodesk products often leave behind deeply nested registry keys, orphaned background services, and fragmented shared dependencies. Scorched-earth uninstallation scripts often break global licensing (FlexNet/ODIS) for *other* software on the machine.
