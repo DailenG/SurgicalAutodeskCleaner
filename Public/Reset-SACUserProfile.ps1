@@ -74,7 +74,7 @@ function Reset-SACUserProfile {
         return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
     }
 
-    Clear-Host
+    if (-not (Test-SACRemoteSession)) { Clear-Host }
     Write-Msg "==========================================" "Info"
     Write-Msg " SAC USER PROFILE RESET INITIALIZED"       "Info"
     Write-Msg " Debug Log:  $DebugLog"                    "Info"

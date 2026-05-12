@@ -16,6 +16,8 @@ function Start-SACInteractive {
         [switch]$ScanOnly
     )
 
+    # Shared helpers (Test-SACRemoteSession and Invoke-SACPause) are imported from the Private folder.
+
     # -------------------------------------------------------------------------
     # Shared helper: multi-select list (GridView on PS7+, text fallback)
     # -------------------------------------------------------------------------
@@ -26,7 +28,7 @@ function Start-SACInteractive {
         )
         if ($Items.Count -eq 0) { return @() }
 
-        if ($PSVersionTable.PSVersion.Major -ge 7) {
+        if ($PSVersionTable.PSVersion.Major -ge 7 -and -not (Test-SACRemoteSession)) {
             if (-not (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue)) {
                 try { Import-Module Microsoft.PowerShell.ConsoleGuiTools -ErrorAction Stop }
                 catch {
@@ -255,7 +257,8 @@ function Start-SACInteractive {
     }
 
     while ($true) {
-        Clear-Host
+        if (-not (Test-SACRemoteSession)) { Clear-Host }
+        else { Write-Host "`n--- SAC Main Menu ---`n" -ForegroundColor Cyan }
 
         # Box-drawing characters generated at runtime via [char] casts.
         # Source file stays pure 7-bit ASCII - no BOM or encoding dependency.
@@ -348,8 +351,7 @@ function Start-SACInteractive {
 
             "1" {
                 Invoke-SurgicalCleanupFlow -ScanOnly $false
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "2" {
@@ -362,8 +364,7 @@ function Start-SACInteractive {
                 } else {
                     Write-Host "  Master Purge cancelled." -ForegroundColor Yellow
                 }
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "3" {
@@ -379,8 +380,7 @@ function Start-SACInteractive {
                 } else {
                     Reset-SACUserProfile
                 }
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "4" {
@@ -391,14 +391,12 @@ function Start-SACInteractive {
                 } else {
                     Reset-SACLicensing
                 }
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "5" {
                 Invoke-SurgicalCleanupFlow -ScanOnly $true
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "6" {
@@ -408,8 +406,7 @@ function Start-SACInteractive {
                 if (-not [string]::IsNullOrWhiteSpace($restoreChoice)) {
                     Restore-SACUserProfile -Restore -BackupPath $restoreChoice.Trim()
                 }
-                Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
-                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                Invoke-SACPause
             }
 
             "V" {

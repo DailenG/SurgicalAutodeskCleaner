@@ -82,7 +82,7 @@ function Reset-SACLicensing {
         }
     }
 
-    Clear-Host
+    if (-not (Test-SACRemoteSession)) { Clear-Host }
     Write-Msg "==========================================" "Info"
     Write-Msg " SAC LICENSING RESET INITIALIZED"           "Info"
     Write-Msg " Debug Log:  $DebugLog"                    "Info"

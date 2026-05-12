@@ -229,20 +229,17 @@ function Start-SACPurge {
         param ([string]$ProductName, [string[]]$Versions)
 
         foreach ($version in $Versions) {
-            Write-Msg "Starting uninstallation sequence for $($ProductName) $($version)..." "Info"
-
-            Stop-AndRemoveService -ServiceName "Autodesk"
-            Stop-AndRemoveService -ServiceName "Adsk"
-            Stop-AndRemoveService -ServiceName "ODIS"
+            # Kill running processes before we start uninstallation
+            foreach ($processName in $ProcessesToKill) {
+                try { Get-Process -Name $processName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop } 
+                catch { Write-QuietLog "Could not stop process $($processName): $($_.Exception.Message)" }
+            }
 
             # Disable Autodesk Scheduled Tasks FIRST to prevent processes from restarting
             Get-ScheduledTask -TaskPath "\Autodesk\*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
             Get-ScheduledTask -TaskName "*Autodesk*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
 
-            foreach ($processName in $ProcessesToKill) {
-                try { Get-Process -Name $processName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop } 
-                catch { Write-QuietLog "Could not stop process $($processName): $($_.Exception.Message)" }
-            }
+            Write-Msg "Starting uninstallation sequence for $($ProductName) $($version)..." "Info"
 
             Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -Force -ErrorAction SilentlyContinue
 
@@ -275,15 +272,24 @@ function Start-SACPurge {
                         Write-Msg "MSI Executing: $($DisplayName)" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
                     
+                        # Wait loop with idle timeout and hard cap
                         $LastCpu = $null
                         $ZeroCpuTime = $null
+                        $StartTime = Get-Date
                         while (!$Process.HasExited) {
                             Start-Sleep -Seconds 10
                             try {
+                                # Hard cap of 20 minutes per uninstaller to prevent indefinite hangs
+                                if (((Get-Date) - $StartTime).TotalMinutes -ge 20) {
+                                    Write-Msg "Hard timeout (20m) reached for $($DisplayName). Terminating." "Error"
+                                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                                    break
+                                }
+
                                 $GrabProcess = Get-Process -Id $Process.Id -ErrorAction Stop
                                 $currentCpu = $GrabProcess.CPU
                             
-                                # If CPU time hasn't changed since last check, it's idle
+                                # If CPU time hasn't changed since last check, it's potentially idle
                                 if ($null -ne $LastCpu -and $currentCpu -eq $LastCpu) {
                                     if ($null -eq $ZeroCpuTime) { $ZeroCpuTime = Get-Date } 
                                     elseif (((Get-Date) - $ZeroCpuTime).TotalMinutes -ge 5) {
@@ -337,11 +343,20 @@ function Start-SACPurge {
                         try {
                             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                         
+                            # Wait loop with idle timeout and hard cap
                             $LastCpu = $null
                             $ZeroCpuTime = $null
+                            $StartTime = Get-Date
                             while (!$Process.HasExited) {
                                 Start-Sleep -Seconds 10
                                 try {
+                                    # Hard cap of 20 minutes per uninstaller
+                                    if (((Get-Date) - $StartTime).TotalMinutes -ge 20) {
+                                        Write-Msg "Hard timeout (20m) reached for $($DisplayName). Terminating." "Error"
+                                        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                                        break
+                                    }
+
                                     $GrabProcess = Get-Process -Id $Process.Id -ErrorAction Stop
                                     $currentCpu = $GrabProcess.CPU
                                 
@@ -409,6 +424,12 @@ function Start-SACPurge {
     foreach ($product in $RemoveVersions) {
         Invoke-UninstallAutodeskProduct -ProductName $product.Name -Versions $product.Versions
     }
+
+    # --- Phase 2: Service and System Component Removal ---
+    Write-Msg "All product uninstallers completed. Proceeding to service removal..." "Info"
+    Stop-AndRemoveService -ServiceName "Autodesk"
+    Stop-AndRemoveService -ServiceName "Adsk"
+    Stop-AndRemoveService -ServiceName "ODIS"
 
     Invoke-RemoveODISAndLicensing
     Invoke-RemoveSQLLocalDB

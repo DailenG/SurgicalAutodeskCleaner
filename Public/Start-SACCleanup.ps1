@@ -441,7 +441,7 @@ function Start-SACCleanup {
     }
 
     # --- Execution Block ---
-    Clear-Host
+    if (-not (Test-SACRemoteSession)) { Clear-Host }
     Write-Msg "==========================================" "Info"
     Write-Msg " SURGICAL AUTODESK CLEANUP INITIALIZED" "Info"
     Write-Msg " Transcript: $($TranscriptLog)" "Info"
