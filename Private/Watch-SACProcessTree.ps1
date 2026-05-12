@@ -18,7 +18,7 @@ function Watch-SACProcessTree {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [int]$RootPID,
+        [System.Diagnostics.Process]$RootProcess,
         
         [string]$DisplayName = "Process",
         [int]$TimeoutMinutes = 20,
@@ -29,48 +29,50 @@ function Watch-SACProcessTree {
     $ZeroCpuTime = $null
     $LastTotalCpu = $null
     
-    # Capture root creation time to prevent monitoring recycled PIDs
-    $RootCreationTime = $null
+    # We maintain a stateful dictionary of known processes: PID -> CreationDate
+    # This completely eliminates PID recycling vulnerabilities.
+    $KnownProcs = @{}
+    
+    $RootPID = $RootProcess.Id
+    
     try {
         $rootCim = Get-CimInstance Win32_Process -Filter "ProcessId = $RootPID" -ErrorAction Stop
-        if ($rootCim) { $RootCreationTime = $rootCim.CreationDate }
+        if ($rootCim) { 
+            $KnownProcs[$RootPID] = $rootCim.CreationDate 
+        }
     } catch {
-        # If we can't get the root creation time (e.g. process exited too fast), we just continue.
+        # If it exited before we could grab WMI info, we still add it so we can at least try to find children 
+        # spawned in the same second, though it's less reliable.
+        $KnownProcs[$RootPID] = $StartTime
     }
 
-    # Helper function to recursively find all descendant processes
-    function Get-ProcessTree {
-        param([int]$RootId, [datetime]$RootTime)
-        
-        # Fetch all processes once per loop iteration to minimize WMI overhead
+    # Helper function to update the known process tree
+    function Update-KnownTree {
         $allProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
-        if (-not $allProcs) { return @{} }
-        
-        $tree = @{}
-        $queue = [System.Collections.Generic.Queue[int]]::new()
-        $queue.Enqueue($RootId)
-        
-        while ($queue.Count -gt 0) {
-            $currentId = $queue.Dequeue()
-            
-            # Find direct children of the current ID
-            $children = $allProcs | Where-Object { $_.ParentProcessId -eq $currentId }
-            
-            foreach ($child in $children) {
-                # Safeguard: PID Recycling. A child cannot be older than the root process.
-                if ($null -ne $RootTime -and $child.CreationDate -lt $RootTime) {
-                    continue
-                }
-                
-                # Prevent infinite loops in case of bizarre circular PID relationships
-                if (-not $tree.ContainsKey($child.ProcessId)) {
-                    $tree[$child.ProcessId] = $child
-                    $queue.Enqueue($child.ProcessId)
+        if (-not $allProcs) { return }
+
+        # Build a quick lookup dictionary for this loop
+        $currentProcs = @{}
+        foreach ($p in $allProcs) {
+            $currentProcs[$p.ProcessId] = $p
+        }
+
+        $addedNew = $true
+        while ($addedNew) {
+            $addedNew = $false
+            foreach ($p in $allProcs) {
+                # If this process is NOT known, but its parent IS known...
+                if (-not $KnownProcs.ContainsKey($p.ProcessId) -and $KnownProcs.ContainsKey($p.ParentProcessId)) {
+                    $parentCreationTime = $KnownProcs[$p.ParentProcessId]
+                    # PID Recycling Defense: The child must be created at or after the parent's creation time.
+                    if ($p.CreationDate -ge $parentCreationTime) {
+                        $KnownProcs[$p.ProcessId] = $p.CreationDate
+                        $addedNew = $true
+                    }
                 }
             }
         }
-        
-        return $tree
+        return $currentProcs
     }
 
     $isRemote = $false
@@ -83,58 +85,51 @@ function Watch-SACProcessTree {
     while ($true) {
         $elapsed = (Get-Date) - $StartTime
 
+        # Update our stateful tree with any new descendants
+        $currentCimProcs = Update-KnownTree
+
         # 1. Check Hard Timeout
         if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
             Write-Host "`n  [!] Hard timeout ($TimeoutMinutes m) reached for $DisplayName. Terminating tree." -ForegroundColor Red
-            try { Stop-Process -Id $RootPID -Force -ErrorAction SilentlyContinue } catch {}
-            
-            $currentTree = Get-ProcessTree -RootId $RootPID -RootTime $RootCreationTime
-            foreach ($childId in $currentTree.Keys) {
-                try { Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue } catch {}
+            foreach ($pidToKill in $KnownProcs.Keys) {
+                try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
             }
             break
         }
 
-        # 2. Check if processes are alive
-        $rootAlive = [bool](Get-Process -Id $RootPID -ErrorAction SilentlyContinue)
-        $currentTree = Get-ProcessTree -RootId $RootPID -RootTime $RootCreationTime
-        
-        if (-not $rootAlive -and $currentTree.Count -eq 0) {
+        # 2. Evaluate active processes from our known list
+        $activeCount = 0
+        $totalCpu = 0
+        $totalMemMB = 0
+
+        foreach ($knownPid in $KnownProcs.Keys) {
+            # Ensure the PID hasn't been recycled by checking CreationDate against our state
+            $cimProc = $currentCimProcs[$knownPid]
+            if ($null -ne $cimProc -and $cimProc.CreationDate -eq $KnownProcs[$knownPid]) {
+                $activeCount++
+                try {
+                    # Get-Process is needed for accurate CPU/Memory
+                    $p = Get-Process -Id $knownPid -ErrorAction Stop
+                    $totalCpu += $p.CPU
+                    $totalMemMB += ($p.WorkingSet64 / 1MB)
+                } catch {}
+            }
+        }
+
+        # Root logic: The root process must be truly dead (using the .NET object) 
+        # and no valid known children can be active.
+        if ($RootProcess.HasExited -and $activeCount -eq 0) {
             Write-Host "`n  [*] Process tree for $DisplayName has exited cleanly." -ForegroundColor Green
             break
         }
 
-        # 3. Calculate Aggregate Resource Usage
-        $totalCpu = 0
-        $totalMemMB = 0
-        $activeCount = 0
-
-        if ($rootAlive) {
-            try {
-                $p = Get-Process -Id $RootPID -ErrorAction Stop
-                $totalCpu += $p.CPU
-                $totalMemMB += ($p.WorkingSet64 / 1MB)
-                $activeCount++
-            } catch {}
-        }
-
-        foreach ($childId in $currentTree.Keys) {
-            try {
-                $p = Get-Process -Id $childId -ErrorAction Stop
-                $totalCpu += $p.CPU
-                $totalMemMB += ($p.WorkingSet64 / 1MB)
-                $activeCount++
-            } catch {}
-        }
-
-        # 4. Check Idle Timeout
+        # 3. Check Idle Timeout
         if ($null -ne $LastTotalCpu -and $totalCpu -eq $LastTotalCpu) {
             if ($null -eq $ZeroCpuTime) { $ZeroCpuTime = Get-Date }
             elseif (((Get-Date) - $ZeroCpuTime).TotalMinutes -ge $IdleTimeoutMinutes) {
                 Write-Host "`n  [!] Process tree idle timeout ($IdleTimeoutMinutes m) reached for $DisplayName. Terminating tree." -ForegroundColor Yellow
-                try { Stop-Process -Id $RootPID -Force -ErrorAction SilentlyContinue } catch {}
-                foreach ($childId in $currentTree.Keys) {
-                    try { Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue } catch {}
+                foreach ($pidToKill in $KnownProcs.Keys) {
+                    try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
                 }
                 break
             }
@@ -143,7 +138,7 @@ function Watch-SACProcessTree {
             $LastTotalCpu = $totalCpu
         }
 
-        # 5. UI Feedback
+        # 4. UI Feedback
         if (-not $isRemote) {
             $elapsedStr = "{0:mm\:ss}" -f $elapsed
             $memStr = [math]::Round($totalMemMB, 1)

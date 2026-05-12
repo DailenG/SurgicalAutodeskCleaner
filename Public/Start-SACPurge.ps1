@@ -272,7 +272,7 @@ function Start-SACPurge {
                         Write-Msg "MSI Executing: $($DisplayName)" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
                     
-                        Watch-SACProcessTree -RootPID $Process.Id -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
+                        Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
                         Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
                         if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
                             $script:SACFailures += [PSCustomObject]@{ Component = "MSI Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
@@ -311,7 +311,7 @@ function Start-SACPurge {
                         try {
                             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                         
-                            Watch-SACProcessTree -RootPID $Process.Id -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
+                            Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
                             Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
                             if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
                                 $script:SACFailures += [PSCustomObject]@{ Component = "Custom Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
