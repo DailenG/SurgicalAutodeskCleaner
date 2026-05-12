@@ -264,7 +264,7 @@ function Start-SACPurge {
             foreach ($app in $UninstallKeys) {
                 $ProductCode = $app.PSChildName
                 $DisplayName = $app.DisplayName
-                $UninstallString = $app.UninstallString
+                $UninstallString = if (-not [string]::IsNullOrWhiteSpace($app.QuietUninstallString)) { $app.QuietUninstallString } else { $app.UninstallString }
                 $MsiLogFile = "$($LogDir)\$($DisplayName -replace '[\\/:\*\?"<>\|]','')_Uninstall.log"
             
                 if ($ProductCode -match '^{.*}$') {
