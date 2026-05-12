@@ -272,39 +272,7 @@ function Start-SACPurge {
                         Write-Msg "MSI Executing: $($DisplayName)" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
                     
-                        # Wait loop with idle timeout and hard cap
-                        $LastCpu = $null
-                        $ZeroCpuTime = $null
-                        $StartTime = Get-Date
-                        while (!$Process.HasExited) {
-                            Start-Sleep -Seconds 10
-                            try {
-                                # Hard cap of 20 minutes per uninstaller to prevent indefinite hangs
-                                if (((Get-Date) - $StartTime).TotalMinutes -ge 20) {
-                                    Write-Msg "Hard timeout (20m) reached for $($DisplayName). Terminating." "Error"
-                                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                                    break
-                                }
-
-                                $GrabProcess = Get-Process -Id $Process.Id -ErrorAction Stop
-                                $currentCpu = $GrabProcess.CPU
-                            
-                                # If CPU time hasn't changed since last check, it's potentially idle
-                                if ($null -ne $LastCpu -and $currentCpu -eq $LastCpu) {
-                                    if ($null -eq $ZeroCpuTime) { $ZeroCpuTime = Get-Date } 
-                                    elseif (((Get-Date) - $ZeroCpuTime).TotalMinutes -ge 5) {
-                                        Write-Msg "Process idle timeout. Terminating msiexec for $($DisplayName)." "Warning"
-                                        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                                        break
-                                    }
-                                }
-                                else { 
-                                    $ZeroCpuTime = $null 
-                                    $LastCpu = $currentCpu
-                                }
-                            }
-                            catch { break }
-                        }
+                        Watch-SACProcessTree -RootPID $Process.Id -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
                         Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
                         if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
                             $script:SACFailures += [PSCustomObject]@{ Component = "MSI Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
@@ -343,38 +311,7 @@ function Start-SACPurge {
                         try {
                             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                         
-                            # Wait loop with idle timeout and hard cap
-                            $LastCpu = $null
-                            $ZeroCpuTime = $null
-                            $StartTime = Get-Date
-                            while (!$Process.HasExited) {
-                                Start-Sleep -Seconds 10
-                                try {
-                                    # Hard cap of 20 minutes per uninstaller
-                                    if (((Get-Date) - $StartTime).TotalMinutes -ge 20) {
-                                        Write-Msg "Hard timeout (20m) reached for $($DisplayName). Terminating." "Error"
-                                        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                                        break
-                                    }
-
-                                    $GrabProcess = Get-Process -Id $Process.Id -ErrorAction Stop
-                                    $currentCpu = $GrabProcess.CPU
-                                
-                                    if ($null -ne $LastCpu -and $currentCpu -eq $LastCpu) {
-                                        if ($null -eq $ZeroCpuTime) { $ZeroCpuTime = Get-Date } 
-                                        elseif (((Get-Date) - $ZeroCpuTime).TotalMinutes -ge 5) {
-                                            Write-Msg "Process idle timeout. Terminating custom uninstaller for $($DisplayName)." "Warning"
-                                            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                                            break
-                                        }
-                                    }
-                                    else { 
-                                        $ZeroCpuTime = $null 
-                                        $LastCpu = $currentCpu
-                                    }
-                                }
-                                catch { break }
-                            }
+                            Watch-SACProcessTree -RootPID $Process.Id -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
                             Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
                             if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
                                 $script:SACFailures += [PSCustomObject]@{ Component = "Custom Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
