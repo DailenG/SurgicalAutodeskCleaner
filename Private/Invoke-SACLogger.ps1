@@ -49,7 +49,12 @@ function Test-SACInteractive {
     param (
         [switch]$Silent
     )
-    # We check if there's a UI host and we are in a UserInteractive environment.
-    # We remove the restrictive $host.Name check to support all modern terminals.
-    return [Environment]::UserInteractive -and -not $Silent -and ($null -ne $Host.UI)
+    if ($Silent) { return $false }
+    
+    # We check if there's a UI host.
+    # We also check for a non-zero window handle or a standard host name as a fallback.
+    $hasUI = ($null -ne $Host.UI -and $Host.UI.GetType().Name -ne "InternalHostUserInterface")
+    $isConsole = ($Host.Name -match "ConsoleHost|Code|App" -or [Environment]::UserInteractive)
+    
+    return $hasUI -and $isConsole
 }

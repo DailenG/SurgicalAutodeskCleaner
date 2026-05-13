@@ -8,7 +8,8 @@ function Connect-SACTarget {
         [System.Management.Automation.PSCredential]$Credential
     )
 
-    if ([string]::IsNullOrWhiteSpace($ComputerName) -or $ComputerName -eq "localhost" -or $ComputerName -eq $env:COMPUTERNAME) {
+    # Only treat empty input or explicit 'localhost' as the local machine reset.
+    if ([string]::IsNullOrWhiteSpace($ComputerName) -or $ComputerName.Trim().ToLower() -eq "localhost") {
         return [PSCustomObject]@{
             ComputerName = "localhost"
             Credential   = $null
@@ -16,34 +17,35 @@ function Connect-SACTarget {
         }
     }
 
-    Write-Host "`n  Testing WinRM connection to $ComputerName..." -ForegroundColor Cyan
+    $TargetMachine = $ComputerName.Trim()
+    Write-Host "`n  Testing WinRM connection to $TargetMachine..." -ForegroundColor Cyan
     
     $testParams = @{
-        ComputerName = $ComputerName
+        ComputerName = $TargetMachine
         ErrorAction  = "Stop"
     }
     if ($Credential) { $testParams["Credential"] = $Credential }
 
     try {
         Test-WSMan @testParams | Out-Null
-        Write-Host "  [OK] WinRM connectivity verified." -ForegroundColor Green
+        Write-Host "  [OK] WinRM connectivity verified for $TargetMachine." -ForegroundColor Green
         return [PSCustomObject]@{
-            ComputerName = $ComputerName
+            ComputerName = $TargetMachine
             Credential   = $Credential
             Connected    = $true
         }
     } catch {
-        Write-Host "  [!] Connection failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [!] Connection failed to ${TargetMachine}: $($_.Exception.Message)" -ForegroundColor Red
         
         $retry = Read-Host "`n  Would you like to try with alternative credentials? (y/N)"
         if ($retry.Trim().ToLower() -eq "y") {
             $newCred = Get-Credential
-            return Connect-SACTarget -ComputerName $ComputerName -Credential $newCred
+            return Connect-SACTarget -ComputerName $TargetMachine -Credential $newCred
         }
     }
 
     return [PSCustomObject]@{
-        ComputerName = $ComputerName
+        ComputerName = $TargetMachine
         Credential   = $null
         Connected    = $false
     }
