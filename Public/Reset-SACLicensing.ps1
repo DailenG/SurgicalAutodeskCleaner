@@ -48,48 +48,34 @@ function Reset-SACLicensing {
     $TranscriptLog = "$LogDir\LicenseResetTranscript.log"
     Start-Transcript -Path $TranscriptLog -Append -Force | Out-Null
 
-    function Write-Msg {
-        param ([string]$Message, [ValidateSet("Info","Success","Warning","Error")][string]$Type = "Info")
-        $ts  = "[$(Get-Date -Format 'HH:mm:ss')]"
-        $clr = @{ Info="Cyan"; Success="Green"; Warning="Yellow"; Error="Red" }
-        Write-Host "$ts $Message" -ForegroundColor $clr[$Type]
-    }
-
-    function Write-QuietLog {
-        param ([string]$Message)
-        Add-Content -Path $DebugLog -Value "[$(Get-Date -Format 'HH:mm:ss')] [DEBUG] $Message"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
-    }
+    # --- Helper Functions (Centralized) ---
 
     function Remove-TargetPath {
         param ([string]$Path, [string]$Label)
         if (Test-Path $Path) {
             try {
                 Remove-Item $Path -Recurse -Force -ErrorAction Stop
-                Write-Msg "Cleared: $Label" "Success"
+                Write-SACMsg "Cleared: $Label" "Success"
                 return "OK"
             } catch {
-                Write-QuietLog "Failed to remove $Path : $($_.Exception.Message)"
+                Write-SACQuietLog "Failed to remove $Path : $($_.Exception.Message)"
                 $script:SACFailures += [PSCustomObject]@{ Component=$Label; Reason=$_.Exception.Message }
                 return "FAILED"
             }
         } else {
-            Write-QuietLog "Not found (skipped): $Path"
+            Write-SACQuietLog "Not found (skipped): $Path"
             return "NOT FOUND"
         }
     }
 
     if (-not (Test-SACRemoteSession)) { Clear-Host }
-    Write-Msg "==========================================" "Info"
-    Write-Msg " SAC LICENSING RESET INITIALIZED"           "Info"
-    Write-Msg " Debug Log:  $DebugLog"                    "Info"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " SAC LICENSING RESET INITIALIZED"           "Info"
+    Write-SACMsg " Debug Log:  $DebugLog"                    "Info"
+    Write-SACMsg "==========================================" "Info"
 
-    if (Test-Interactive) {
-        Write-Msg "Checking for running Autodesk applications..." "Info"
+    if (Test-SACInteractive -Silent $Silent) {
+        Write-SACMsg "Checking for running Autodesk applications..." "Info"
         $Running = Get-Process | Where-Object { 
             try { ($_.Path -match "Autodesk") -or ($_.Description -match "Autodesk") -or ($_.Company -match "Autodesk") } catch { $false }
         }
@@ -113,24 +99,24 @@ function Reset-SACLicensing {
         
         $resp = Read-Host "  Type 'LICENSING' to confirm"
         if ($resp -ne "LICENSING") {
-            Write-Msg "Aborted by user." "Warning"
+            Write-SACMsg "Aborted by user." "Warning"
             Stop-Transcript | Out-Null
             return
         }
     } else {
-        Write-Msg "Running in silent/non-interactive mode." "Info"
+        Write-SACMsg "Running in silent/non-interactive mode." "Info"
     }
 
     # --- Stop licensing service before wipe ---
     $LicService = Get-Service -Name "AdskLicensing" -ErrorAction SilentlyContinue
     if ($LicService -and $LicService.Status -eq "Running") {
-        Write-Msg "Stopping AdskLicensing service..." "Info"
+        Write-SACMsg "Stopping AdskLicensing service..." "Info"
         try {
             Stop-Service -Name "AdskLicensing" -Force -ErrorAction Stop
-            Write-Msg "AdskLicensing service stopped." "Success"
+            Write-SACMsg "AdskLicensing service stopped." "Success"
         } catch {
-            Write-QuietLog "Failed to stop AdskLicensing: $($_.Exception.Message)"
-            Write-Msg "Warning: Could not stop AdskLicensing service. Files may be locked." "Warning"
+            Write-SACQuietLog "Failed to stop AdskLicensing: $($_.Exception.Message)"
+            Write-SACMsg "Warning: Could not stop AdskLicensing service. Files may be locked." "Warning"
         }
     }
 
@@ -166,7 +152,7 @@ function Reset-SACLicensing {
 
     # --- Optional: FlexNet Autodesk stubs ---
     if ($IncludeFlexNet) {
-        Write-Msg "Scanning FLEXnet for Autodesk-specific stubs..." "Info"
+        Write-SACMsg "Scanning FLEXnet for Autodesk-specific stubs..." "Info"
         $FlexNetDir = "C:\ProgramData\FLEXnet"
         if (Test-Path $FlexNetDir) {
             $adskFiles = Get-ChildItem -Path $FlexNetDir -File -ErrorAction SilentlyContinue |
@@ -174,17 +160,17 @@ function Reset-SACLicensing {
             foreach ($f in $adskFiles) {
                 try {
                     Remove-Item $f.FullName -Force -ErrorAction Stop
-                    Write-Msg "Removed FLEXnet stub: $($f.Name)" "Success"
+                    Write-SACMsg "Removed FLEXnet stub: $($f.Name)" "Success"
                 } catch {
-                    Write-QuietLog "Failed to remove FLEXnet file $($f.FullName): $($_.Exception.Message)"
+                    Write-SACQuietLog "Failed to remove FLEXnet file $($f.FullName): $($_.Exception.Message)"
                     $script:SACFailures += [PSCustomObject]@{ Component="FLEXnet: $($f.Name)"; Reason=$_.Exception.Message }
                 }
             }
             if ($adskFiles.Count -eq 0) {
-                Write-Msg "No Autodesk FLEXnet stubs found." "Info"
+                Write-SACMsg "No Autodesk FLEXnet stubs found." "Info"
             }
         } else {
-            Write-Msg "FLEXnet directory not found - skipping." "Info"
+            Write-SACMsg "FLEXnet directory not found - skipping." "Info"
         }
     }
 
@@ -192,25 +178,25 @@ function Reset-SACLicensing {
     if (-not $SkipServiceRestart) {
         $LicService = Get-Service -Name "AdskLicensing" -ErrorAction SilentlyContinue
         if ($LicService) {
-            Write-Msg "Restarting AdskLicensing service..." "Info"
+            Write-SACMsg "Restarting AdskLicensing service..." "Info"
             try {
                 Start-Service -Name "AdskLicensing" -ErrorAction Stop
-                Write-Msg "AdskLicensing service restarted successfully." "Success"
+                Write-SACMsg "AdskLicensing service restarted successfully." "Success"
             } catch {
-                Write-QuietLog "Failed to restart AdskLicensing: $($_.Exception.Message)"
-                Write-Msg "AdskLicensing could not be restarted. You may need to reboot." "Warning"
+                Write-SACQuietLog "Failed to restart AdskLicensing: $($_.Exception.Message)"
+                Write-SACMsg "AdskLicensing could not be restarted. You may need to reboot." "Warning"
             }
         } else {
-            Write-Msg "AdskLicensing service not present on this machine - skipping restart." "Info"
+            Write-SACMsg "AdskLicensing service not present on this machine - skipping restart." "Info"
         }
     }
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
 
-    Write-Msg "==========================================" "Info"
-    Write-Msg " LICENSING RESET COMPLETED in $ElapsedTime" "Success"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " LICENSING RESET COMPLETED in $ElapsedTime" "Success"
+    Write-SACMsg "==========================================" "Info"
 
     if ($script:SACFailures.Count -gt 0) {
         Write-Host "`n[!] FAILURES DETECTED:" -ForegroundColor Red
