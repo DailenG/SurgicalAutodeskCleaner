@@ -421,7 +421,7 @@ function Start-SACCleanup {
         if ($Response -ne "YES") { 
             Write-SACMsg "Execution aborted by user." "Warning"
             Stop-Transcript | Out-Null
-            exit 
+            return 
         }
     }
     else {

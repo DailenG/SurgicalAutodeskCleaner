@@ -49,5 +49,7 @@ function Test-SACInteractive {
     param (
         [switch]$Silent
     )
-    return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
+    # We check if there's a UI host and we are in a UserInteractive environment.
+    # We remove the restrictive $host.Name check to support all modern terminals.
+    return [Environment]::UserInteractive -and -not $Silent -and ($null -ne $Host.UI)
 }
