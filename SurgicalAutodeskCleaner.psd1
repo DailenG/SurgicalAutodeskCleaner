@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '2.3.8'
+    ModuleVersion     = '2.3.9'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
