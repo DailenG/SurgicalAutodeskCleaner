@@ -35,7 +35,8 @@ function Start-SACInteractive {
     function Invoke-SACSelection {
         param (
             [Parameter(Mandatory=$true)][array]$Items,
-            [string]$Title
+            [string]$Title,
+            [switch]$ViewerOnly
         )
         if ($Items.Count -eq 0) { return @() }
 
@@ -52,7 +53,10 @@ function Start-SACInteractive {
             }
             if (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue) {
                 try {
-                    $selected = $Items | Out-ConsoleGridView -Title "$Title  (CTRL-A = Select All | SPACE = Toggle | ENTER = Confirm)" -OutputMode Multiple -ErrorAction Stop
+                    $mode = if ($ViewerOnly) { "None" } else { "Multiple" }
+                    $hint = if ($ViewerOnly) { "(ENTER = Close)" } else { "(CTRL-A = Select All | SPACE = Toggle | ENTER = Confirm)" }
+                    $selected = $Items | Out-ConsoleGridView -Title "$Title  $hint" -OutputMode $mode -ErrorAction Stop
+                    if ($ViewerOnly) { return $null }
                     if ($selected) { return @($selected) }
                     return @()
                 } catch {
@@ -62,10 +66,17 @@ function Start-SACInteractive {
         }
 
         Write-Host "`n--- $Title ---" -ForegroundColor Cyan
-        Write-Host "0. ALL ITEMS" -ForegroundColor Yellow
+        if (-not $ViewerOnly) {
+            Write-Host "0. ALL ITEMS" -ForegroundColor Yellow
+        }
         for ($i = 0; $i -lt $Items.Count; $i++) {
             Write-Host "$($i+1). $($Items[$i])"
         }
+        
+        if ($ViewerOnly) {
+            return $null
+        }
+
         $inputStr = Read-Host "`nEnter numbers to select (comma-separated, or 0 for all)"
         if ($inputStr -match '0') { return $Items }
         $selected = @()
@@ -627,14 +638,7 @@ $command
             }
 
             "8" {
-                Write-Host "`n  Detected Autodesk Products on ${targetStr}:" -ForegroundColor Cyan
-                if ($installedProducts.Count -eq 0) {
-                    Write-Host "  No versioned Autodesk products detected." -ForegroundColor Yellow
-                } else {
-                    foreach ($p in $installedProducts) {
-                        Write-Host "  - $p"
-                    }
-                }
+                Invoke-SACSelection -Items $installedProducts -Title "Detected Autodesk Products on ${targetStr}" -ViewerOnly
                 Invoke-SACPause
             }
 
