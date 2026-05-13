@@ -16,11 +16,12 @@ function Sync-SACModule {
 
     $RemoteStatus = Invoke-Command -Session $Session -ScriptBlock {
         $m = Get-Module SurgicalAutodeskCleaner -ListAvailable | Select-Object -First 1
-        $path = Join-Path $HOME "Documents\PowerShell\Modules\SurgicalAutodeskCleaner"
+        # The base path for the module
+        $basePath = Join-Path $HOME "Documents\PowerShell\Modules\SurgicalAutodeskCleaner"
         return [PSCustomObject]@{
-            Version = if ($m) { $m.Version.ToString() } else { $null }
-            Path    = $path
-            Exists  = Test-Path $path
+            Version     = if ($m) { $m.Version.ToString() } else { $null }
+            CurrentPath = if ($m) { Split-Path $m.Path -Parent } else { $null }
+            BasePath    = $basePath
         }
     }
 
@@ -32,21 +33,28 @@ function Sync-SACModule {
     Write-Host "[SAC] Version mismatch (Local: $localVersion | Remote: $($RemoteStatus.Version)). Synchronizing..." -ForegroundColor Cyan
 
     Invoke-Command -Session $Session -ScriptBlock {
-        param($path)
-        # If the module is already loaded in the remote session, try to remove it to release file locks
+        param($basePath, $currentPath)
+        # 1. Force unload to release file locks
         if (Get-Module SurgicalAutodeskCleaner) {
             Remove-Module SurgicalAutodeskCleaner -ErrorAction SilentlyContinue
         }
-        # Force a clean directory for the push
-        if (Test-Path $path) {
-            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+
+        # 2. Purge the specific versioned folder if it's different from our base path
+        if ($null -ne $currentPath -and $currentPath -ne $basePath -and (Test-Path $currentPath)) {
+            Write-Host "[SAC] Purging old versioned remote folder: $currentPath"
+            Remove-Item -Path $currentPath -Recurse -Force -ErrorAction SilentlyContinue
         }
-        New-Item -ItemType Directory -Path $path -Force | Out-Null
-    } -ArgumentList $RemoteStatus.Path
+
+        # 3. Purge the base path to ensure a clean slate for the dev push
+        if (Test-Path $basePath) {
+            Remove-Item -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Path $basePath -Force | Out-Null
+    } -ArgumentList $RemoteStatus.BasePath, $RemoteStatus.CurrentPath
 
     Write-Host "[SAC] Pushing local module code to remote target..." -ForegroundColor Cyan
     try {
-        Copy-Item -Path "$ModuleRoot\*" -Destination $RemoteStatus.Path -Recurse -ToSession $Session -Force -ErrorAction Stop
+        Copy-Item -Path "$ModuleRoot\*" -Destination $RemoteStatus.BasePath -Recurse -ToSession $Session -Force -ErrorAction Stop
         Write-Host "[SAC] Sync complete." -ForegroundColor Green
     } catch {
         Write-Host "[SAC] Warning: Failed to sync some module files (likely in-use by another process)." -ForegroundColor Yellow
