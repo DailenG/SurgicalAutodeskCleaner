@@ -1,22 +1,57 @@
 function Sync-SACModule {
     <#
     .SYNOPSIS
-        Force-syncs the local module code to a remote target session.
+        Force-syncs the local module code to a remote target session if versions differ.
     #>
     param(
         [Parameter(Mandatory=$true)]
         [System.Management.Automation.Runspaces.PSSession]$Session
     )
 
+    $localModule = Get-Module SurgicalAutodeskCleaner -ListAvailable | Select-Object -First 1
+    if (-not $localModule) { return }
+
+    $localVersion = $localModule.Version.ToString()
     $ModuleRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-    $RemotePath = Invoke-Command -Session $Session -ScriptBlock { 
+
+    $RemoteStatus = Invoke-Command -Session $Session -ScriptBlock {
+        $m = Get-Module SurgicalAutodeskCleaner -ListAvailable | Select-Object -First 1
         $path = Join-Path $HOME "Documents\PowerShell\Modules\SurgicalAutodeskCleaner"
-        if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
-        return $path
+        return [PSCustomObject]@{
+            Version = if ($m) { $m.Version.ToString() } else { $null }
+            Path    = $path
+            Exists  = Test-Path $path
+        }
     }
 
+    if ($RemoteStatus.Version -eq $localVersion) {
+        Write-Host "[SAC] Remote module version ($localVersion) is already up to date." -ForegroundColor Gray
+        return
+    }
+
+    Write-Host "[SAC] Version mismatch (Local: $localVersion | Remote: $($RemoteStatus.Version)). Synchronizing..." -ForegroundColor Cyan
+
+    Invoke-Command -Session $Session -ScriptBlock {
+        param($path)
+        # If the module is already loaded in the remote session, try to remove it to release file locks
+        if (Get-Module SurgicalAutodeskCleaner) {
+            Remove-Module SurgicalAutodeskCleaner -ErrorAction SilentlyContinue
+        }
+        # Force a clean directory for the push
+        if (Test-Path $path) {
+            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
+    } -ArgumentList $RemoteStatus.Path
+
     Write-Host "[SAC] Pushing local module code to remote target..." -ForegroundColor Cyan
-    Copy-Item -Path "$ModuleRoot\*" -Destination $RemotePath -Recurse -ToSession $Session -Force
+    try {
+        Copy-Item -Path "$ModuleRoot\*" -Destination $RemoteStatus.Path -Recurse -ToSession $Session -Force -ErrorAction Stop
+        Write-Host "[SAC] Sync complete." -ForegroundColor Green
+    } catch {
+        Write-Host "[SAC] Warning: Failed to sync some module files (likely in-use by another process)." -ForegroundColor Yellow
+        Write-Host "      Detailed Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    }
 }
 
 function Invoke-SACRemote {
