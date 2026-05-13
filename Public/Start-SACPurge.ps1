@@ -257,7 +257,7 @@ function Start-SACPurge {
         $localDbAppData = "$env:LOCALAPPDATA\Microsoft\Microsoft SQL Server Local DB"
         if (Test-Path $localDbAppData) {
             Write-SACQuietLog "Purging residual LocalDB AppData..."
-            Remove-Item -Path $localDbAppData -Recurse -Force -ErrorAction SilentlyContinue
+            Invoke-SACRobocopyPurge -TargetPath $localDbAppData | Out-Null
         }
     }
 

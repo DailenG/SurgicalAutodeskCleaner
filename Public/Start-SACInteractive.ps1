@@ -393,7 +393,18 @@ function Start-SACInteractive {
 # Ensure module is installed
 if (-not (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner)) {
     Write-Host "Installing SurgicalAutodeskCleaner from PSGallery..."
-    Install-Module -Name SurgicalAutodeskCleaner -Force -AcceptLicense -AllowClobber -Scope CurrentUser
+    
+    $installParams = @{
+        Name         = 'SurgicalAutodeskCleaner'
+        Force        = $true
+        AllowClobber = $true
+        Scope        = 'CurrentUser'
+    }
+    if ((Get-Command Install-Module).Parameters.Keys -contains 'AcceptLicense') {
+        $installParams['AcceptLicense'] = $true
+    }
+    
+    Install-Module @installParams
 }
 
 Import-Module SurgicalAutodeskCleaner -Force

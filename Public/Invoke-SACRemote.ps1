@@ -39,11 +39,28 @@ function Invoke-SACRemote {
         param($SACCommand, $DoInstall)
         
         if ($DoInstall) {
-            if (-not (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner)) {
+            $hasModule = Get-Module -ListAvailable -Name SurgicalAutodeskCleaner
+            if (-not $hasModule) {
                 Write-Host "[SAC] Installing module from PSGallery..." -ForegroundColor Cyan
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                Install-Module -Name SurgicalAutodeskCleaner -Force -AcceptLicense -AllowClobber -Scope CurrentUser -ErrorAction SilentlyContinue
+            } else {
+                Write-Host "[SAC] Ensuring latest module version is installed..." -ForegroundColor Cyan
             }
+
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            
+            $installParams = @{
+                Name         = 'SurgicalAutodeskCleaner'
+                Force        = $true
+                AllowClobber = $true
+                Scope        = 'CurrentUser'
+                ErrorAction  = 'SilentlyContinue'
+            }
+            # Support older PowerShellGet versions that don't have -AcceptLicense
+            if ((Get-Command Install-Module).Parameters.Keys -contains 'AcceptLicense') {
+                $installParams['AcceptLicense'] = $true
+            }
+            
+            Install-Module @installParams
         }
 
         if (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner) {
