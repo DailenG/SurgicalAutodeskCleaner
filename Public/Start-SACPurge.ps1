@@ -511,27 +511,33 @@ function Start-SACPurge {
     }
 
     Write-Msg "Wiping File System..." "Info"
-    Start-Sleep -Seconds 3 
+    Start-Sleep -Seconds 3
     foreach ($location in $DataLocations) {
-        # Resolve the paths first to handle wildcards properly
-        $resolvedPaths = Get-Item -Path $location -ErrorAction SilentlyContinue
-        foreach ($path in $resolvedPaths) {
-            if (Test-Path $path.FullName) {
-                $fp = $path.FullName
-                $purgeResult = Invoke-SACRobocopyPurge -TargetPath $fp
-                
-                if (-not $purgeResult.Success) {
-                    Write-QuietLog "Failed to fully remove directory $fp (files likely locked)."
-                    
-                    $failReason = "Files are locked/in-use."
-                    if ($purgeResult.LockedItems.Count -gt 0) {
-                        $failReason += " Locked Items: $($purgeResult.LockedItems -join ', ')"
-                    }
-                    
-                    $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
-                } else {
-                    Write-Msg "Purged directory: $fp" "Success"
+        # Separate wildcard paths (need Get-Item expansion) from literal paths.
+        # Get-Item returns nothing for a literal path whose root was partially deleted
+        # by a previous uninstaller — even when subdirectories still exist on disk.
+        # Test-Path -LiteralPath is immune to this and correctly detects those survivors.
+        if ($location -match '\*') {
+            $resolvedPaths = Get-Item -Path $location -ErrorAction SilentlyContinue |
+                             Select-Object -ExpandProperty FullName
+        } else {
+            $resolvedPaths = if (Test-Path -LiteralPath $location) { @($location) } else { @() }
+        }
+
+        foreach ($fp in $resolvedPaths) {
+            $purgeResult = Invoke-SACRobocopyPurge -TargetPath $fp
+
+            if (-not $purgeResult.Success) {
+                Write-QuietLog "Failed to fully remove directory $fp (files likely locked)."
+
+                $failReason = "Files are locked/in-use."
+                if ($purgeResult.LockedItems.Count -gt 0) {
+                    $failReason += " Locked Items: $($purgeResult.LockedItems -join ', ')"
                 }
+
+                $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
+            } else {
+                Write-Msg "Purged directory: $fp" "Success"
             }
         }
     }
