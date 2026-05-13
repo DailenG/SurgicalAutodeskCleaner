@@ -148,11 +148,15 @@ function Start-SACCleanup {
         $ShortcutLocations = @(
             "$($env:Public)\Desktop",
             "C:\Users\*\Desktop",
+            "C:\Users\*\OneDrive\Desktop",
             "$($env:ProgramData)\Microsoft\Windows\Start Menu\Programs",
             "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
         )
 
-        $SearchPattern = "*$($ProductName)*$($Version)*.lnk"
+        $Shell = New-Object -ComObject WScript.Shell
+        $AutodeskPath = "$($env:ProgramFiles)\Autodesk"
+        $AutodeskPathX86 = "$(${env:ProgramFiles(x86)})\Autodesk"
+        $SearchPattern = "*$($ProductName)*$($Version)*"
 
         foreach ($loc in $ShortcutLocations) {
             # Resolve wildcards for user profiles
@@ -160,12 +164,34 @@ function Start-SACCleanup {
             
             foreach ($path in $resolved) {
                 if (Test-Path $path) {
-                    Get-ChildItem -Path $path -Filter $SearchPattern -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-                        try {
-                            Remove-Item $_.FullName -Force -ErrorAction Stop
-                            Write-SACMsg "Removed shortcut: $($_.Name)" "Success"
-                        } catch {
-                            Write-SACQuietLog "Failed to remove shortcut $($_.FullName): $($_.Exception.Message)"
+                    Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                        $isMatch = $false
+                        $lnkBore = $_
+                        
+                        # Match 1: Name pattern (classic)
+                        if ($lnkBore.Name -like "*$SearchPattern*") {
+                            $isMatch = $true
+                        }
+                        else {
+                            # Match 2: Target path (deep inspection)
+                            try {
+                                $shortcut = $Shell.CreateShortcut($lnkBore.FullName)
+                                $target = $shortcut.TargetPath
+                                if ($target -like "$AutodeskPath$SearchPattern*" -or $target -like "$AutodeskPathX86$SearchPattern*") {
+                                    $isMatch = $true
+                                }
+                            } catch {
+                                Write-SACQuietLog "Failed to inspect shortcut target for $($lnkBore.FullName)"
+                            }
+                        }
+
+                        if ($isMatch) {
+                            try {
+                                Remove-Item $lnkBore.FullName -Force -ErrorAction Stop
+                                Write-SACMsg "Removed shortcut: $($lnkBore.Name)" "Success"
+                            } catch {
+                                Write-SACQuietLog "Failed to remove shortcut $($lnkBore.FullName): $($_.Exception.Message)"
+                            }
                         }
                     }
                 }

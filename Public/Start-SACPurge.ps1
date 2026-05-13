@@ -66,20 +66,61 @@ function Start-SACPurge {
 
     # --- Helper Functions (Centralized) ---
 
-    function Invoke-DesktopCleanup {
-        Write-SACMsg "Sweeping desktops for Autodesk shortcuts..." "Info"
-        $DesktopPaths = @("$($env:PUBLIC)\Desktop", "C:\Users\*\Desktop", "C:\Users\*\OneDrive\Desktop")
-        $ShortcutPatterns = @("*AutoCAD*.lnk", "*Revit*.lnk", "*Autodesk*.lnk", "*Civil 3D*.lnk", "*BIM*.lnk", "*Recap*.lnk")
+    function Invoke-SACShortcutPurge {
+        Write-SACMsg "Sweeping desktops and start menus for Autodesk shortcuts..." "Info"
+        $ShortcutLocations = @(
+            "$($env:PUBLIC)\Desktop",
+            "C:\Users\*\Desktop",
+            "C:\Users\*\OneDrive\Desktop",
+            "$($env:ProgramData)\Microsoft\Windows\Start Menu\Programs",
+            "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
+        )
+        
+        $Shell = New-Object -ComObject WScript.Shell
+        $AutodeskPath = "$($env:ProgramFiles)\Autodesk"
+        $AutodeskPathX86 = "$(${env:ProgramFiles(x86)})\Autodesk"
+        $ShortcutPatterns = @("*AutoCAD*", "*Revit*", "*Autodesk*", "*Civil 3D*", "*BIM*", "*Recap*", "*Navisworks*", "*3ds Max*", "*Maya*", "*Inventor*")
 
-        foreach ($path in $DesktopPaths) {
-            foreach ($pattern in $ShortcutPatterns) {
-                Get-ChildItem -Path $path -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
-                    try {
-                        Remove-Item $_.FullName -Force -ErrorAction Stop
-                        Write-SACMsg "Deleted shortcut: $($_.FullName)" "Success"
-                    }
-                    catch {
-                        Write-SACQuietLog "Failed to delete shortcut $($_.FullName): $($_.Exception.Message)"
+        foreach ($loc in $ShortcutLocations) {
+            # Resolve wildcards for user profiles
+            $resolved = if ($loc -match '\*') { Resolve-Path $loc -ErrorAction SilentlyContinue } else { ,$loc }
+            
+            foreach ($path in $resolved) {
+                if (Test-Path $path) {
+                    Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                        $isMatch = $false
+                        $lnkBore = $_
+
+                        # Match 1: Name pattern
+                        foreach ($pattern in $ShortcutPatterns) {
+                            if ($lnkBore.Name -like "$pattern*") {
+                                $isMatch = $true
+                                break
+                            }
+                        }
+
+                        # Match 2: Target path (if not already matched)
+                        if (-not $isMatch) {
+                            try {
+                                $shortcut = $Shell.CreateShortcut($lnkBore.FullName)
+                                $target = $shortcut.TargetPath
+                                if ($target -like "$AutodeskPath*" -or $target -like "$AutodeskPathX86*") {
+                                    $isMatch = $true
+                                }
+                            } catch {
+                                Write-SACQuietLog "Failed to inspect shortcut target for $($lnkBore.FullName)"
+                            }
+                        }
+
+                        if ($isMatch) {
+                            try {
+                                Remove-Item $lnkBore.FullName -Force -ErrorAction Stop
+                                Write-SACMsg "Deleted shortcut: $($lnkBore.FullName)" "Success"
+                            }
+                            catch {
+                                Write-SACQuietLog "Failed to delete shortcut $($lnkBore.FullName): $($_.Exception.Message)"
+                            }
+                        }
                     }
                 }
             }
@@ -519,7 +560,7 @@ function Start-SACPurge {
         }
     }
 
-    Invoke-DesktopCleanup
+    Invoke-SACShortcutPurge
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
