@@ -58,42 +58,28 @@ function Reset-SACUserProfile {
     $TranscriptLog = "$LogDir\ProfileResetTranscript.log"
     Start-Transcript -Path $TranscriptLog -Append -Force | Out-Null
 
-    function Write-Msg {
-        param ([string]$Message, [ValidateSet("Info","Success","Warning","Error")][string]$Type = "Info")
-        $ts  = "[$(Get-Date -Format 'HH:mm:ss')]"
-        $clr = @{ Info="Cyan"; Success="Green"; Warning="Yellow"; Error="Red" }
-        Write-Host "$ts $Message" -ForegroundColor $clr[$Type]
-    }
-
-    function Write-QuietLog {
-        param ([string]$Message)
-        Add-Content -Path $DebugLog -Value "[$(Get-Date -Format 'HH:mm:ss')] [DEBUG] $Message"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
-    }
+    # --- Helper Functions (Centralized) ---
 
     if (-not (Test-SACRemoteSession)) { Clear-Host }
-    Write-Msg "==========================================" "Info"
-    Write-Msg " SAC USER PROFILE RESET INITIALIZED"       "Info"
-    Write-Msg " Debug Log:  $DebugLog"                    "Info"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " SAC USER PROFILE RESET INITIALIZED"       "Info"
+    Write-SACMsg " Debug Log:  $DebugLog"                    "Info"
+    Write-SACMsg "==========================================" "Info"
 
-    if (Test-Interactive) {
+    if (Test-SACInteractive -Silent $Silent) {
         $action = if ($DeleteRoaming) { "DELETE (permanent)" } else { "RENAME with backup suffix" }
         Write-Host "`nRoaming profile action : $action" -ForegroundColor Cyan
         Write-Host "Target users           : $(if ($TargetUser -eq '*') { 'ALL local profiles' } else { $TargetUser })" -ForegroundColor Cyan
         Write-Host "`nWARNING: This will clear per-user Autodesk application data.`n" -ForegroundColor Yellow
         $resp = Read-Host "Type 'YES' to proceed"
         if ($resp -ne "YES") {
-            Write-Msg "Aborted by user." "Warning"
+            Write-SACMsg "Aborted by user." "Warning"
             Stop-Transcript | Out-Null
             return
         }
     }
     else {
-        Write-Msg "Running in silent/non-interactive mode." "Info"
+        Write-SACMsg "Running in silent/non-interactive mode." "Info"
     }
 
     # Build user profile list
@@ -103,7 +89,7 @@ function Reset-SACUserProfile {
         Where-Object { $TargetUser -eq "*" -or $_.Name -eq $TargetUser }
 
     if (-not $UserProfiles) {
-        Write-Msg "No matching user profiles found. Exiting." "Warning"
+        Write-SACMsg "No matching user profiles found. Exiting." "Warning"
         Stop-Transcript | Out-Null
         return
     }
@@ -113,7 +99,7 @@ function Reset-SACUserProfile {
 
     foreach ($profile in $UserProfiles) {
         $userName = $profile.Name
-        Write-Msg "Processing user: $userName" "Info"
+        Write-SACMsg "Processing user: $userName" "Info"
 
         # --- LOCAL (delete outright) ---
         $LocalBase = Join-Path $profile.FullName "AppData\Local\Autodesk"
@@ -140,10 +126,10 @@ function Reset-SACUserProfile {
             foreach ($dir in $LocalTargets) {
                 try {
                     Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
-                    Write-Msg "[$userName] Deleted Local cache: $($dir.Name)" "Success"
+                    Write-SACMsg "[$userName] Deleted Local cache: $($dir.Name)" "Success"
                     $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="OK" }
                 } catch {
-                    Write-QuietLog "Failed to delete $($dir.FullName): $($_.Exception.Message)"
+                    Write-SACQuietLog "Failed to delete $($dir.FullName): $($_.Exception.Message)"
                     $script:SACFailures += [PSCustomObject]@{ Component="Local Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
                     $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="FAILED" }
                 }
@@ -164,10 +150,10 @@ function Reset-SACUserProfile {
                 if ($DeleteRoaming) {
                     try {
                         Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
-                        Write-Msg "[$userName] Deleted Roaming profile: $($dir.Name)" "Success"
+                        Write-SACMsg "[$userName] Deleted Roaming profile: $($dir.Name)" "Success"
                         $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="OK" }
                     } catch {
-                        Write-QuietLog "Failed to delete roaming $($dir.FullName): $($_.Exception.Message)"
+                        Write-SACQuietLog "Failed to delete roaming $($dir.FullName): $($_.Exception.Message)"
                         $script:SACFailures += [PSCustomObject]@{ Component="Roaming Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
                         $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="FAILED" }
                     }
@@ -175,10 +161,10 @@ function Reset-SACUserProfile {
                     $newName = "$($dir.FullName)$BackupSuffix"
                     try {
                         Rename-Item -Path $dir.FullName -NewName $newName -ErrorAction Stop
-                        Write-Msg "[$userName] Backed up Roaming profile: $($dir.Name) -> $($dir.Name)$BackupSuffix" "Success"
+                        Write-SACMsg "[$userName] Backed up Roaming profile: $($dir.Name) -> $($dir.Name)$BackupSuffix" "Success"
                         $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$newName; Result="OK" }
                     } catch {
-                        Write-QuietLog "Failed to rename roaming $($dir.FullName): $($_.Exception.Message)"
+                        Write-SACQuietLog "Failed to rename roaming $($dir.FullName): $($_.Exception.Message)"
                         $script:SACFailures += [PSCustomObject]@{ Component="Roaming Rename: $($dir.FullName)"; Reason=$_.Exception.Message }
                         $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$dir.FullName; Result="FAILED" }
                     }
@@ -210,10 +196,10 @@ function Reset-SACUserProfile {
                             foreach ($key in $keysToRemove) {
                                 try {
                                     Remove-Item $key.PSPath -Recurse -Force -ErrorAction Stop
-                                    Write-Msg "[$userName] Cleared registry key: $($key.PSChildName)" "Success"
+                                    Write-SACMsg "[$userName] Cleared registry key: $($key.PSChildName)" "Success"
                                     $Summary += [PSCustomObject]@{ User=$userName; Action="Cleared Registry"; Path=$key.PSPath; Result="OK" }
                                 } catch {
-                                    Write-QuietLog "Failed to remove registry key $($key.PSPath): $($_.Exception.Message)"
+                                    Write-SACQuietLog "Failed to remove registry key $($key.PSPath): $($_.Exception.Message)"
                                     $script:SACFailures += [PSCustomObject]@{ Component="Registry: $($key.PSPath)"; Reason=$_.Exception.Message }
                                     $Summary += [PSCustomObject]@{ User=$userName; Action="Cleared Registry"; Path=$key.PSPath; Result="FAILED" }
                                 }
@@ -221,10 +207,10 @@ function Reset-SACUserProfile {
                         }
                     }
                 } else {
-                    Write-QuietLog "Could not resolve SID for user $userName - registry keys skipped."
+                    Write-SACQuietLog "Could not resolve SID for user $userName - registry keys skipped."
                 }
             } catch {
-                Write-QuietLog "Failed to load HKU hive for $userName : $($_.Exception.Message)"
+                Write-SACQuietLog "Failed to load HKU hive for $userName : $($_.Exception.Message)"
             }
         }
     }
@@ -232,9 +218,9 @@ function Reset-SACUserProfile {
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
 
-    Write-Msg "==========================================" "Info"
-    Write-Msg " PROFILE RESET COMPLETED in $ElapsedTime" "Success"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " PROFILE RESET COMPLETED in $ElapsedTime" "Success"
+    Write-SACMsg "==========================================" "Info"
 
     if ($Summary.Count -gt 0) {
         Write-Host "`n--- Summary ---" -ForegroundColor Cyan
