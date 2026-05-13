@@ -144,7 +144,7 @@ function Start-SACPurge {
             if (Test-Path $path) {
                 Write-Msg "Executing native uninstaller: $($path)" "Info"
                 try {
-                    $Process = Start-Process -FilePath $path -ArgumentList "--mode unattended", "--quiet" -PassThru -Wait -NoNewWindow -ErrorAction Stop
+                    $Process = Start-Process -FilePath $path -ArgumentList "--mode unattended" -PassThru -Wait -NoNewWindow -ErrorAction Stop
                     Write-Msg "Uninstaller exited with code: $($Process.ExitCode)" "Info"
                 }
                 catch {
