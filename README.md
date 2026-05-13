@@ -81,7 +81,7 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
-**New in v2.3:** Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
+**New in v2.4:** Enhanced remote target handling. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 
 ```powershell
 Start-SAC

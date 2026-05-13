@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '2.3.9'
+    ModuleVersion = '2.4.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -114,7 +114,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
             Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Licensing', 'UserProfile', 'Dailen'
 
             # Prerelease string
-            Prerelease = 'beta'
+            # Prerelease = ''
 
             # A URL to the license for this module.
             LicenseUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner/blob/master/LICENSE'

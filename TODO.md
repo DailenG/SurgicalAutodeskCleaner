@@ -1,7 +1,7 @@
 # Surgical Autodesk Cleaner - Roadmap & TODO
 
 ## Future Enhancements
-- [/] **Implementation of "Supervisor" Process Monitoring Pattern**
+- [x] **Implementation of "Supervisor" Process Monitoring Pattern**
     - [x] Replace blocking `Wait-Process` or basic `while` loops with a non-blocking supervisor loop.
     - [x] Monitor the entire process tree (child processes) of an uninstaller to ensure nested `msiexec` or ODIS tasks are truly finished before moving on.
     - [x] Implement live UI feedback (elapsed time, status indicators) in the primary console while child processes are running.
@@ -13,7 +13,7 @@
 - [ ] **Unit Testing Improvements**
     - Increase coverage for `Get-SACTier` classification logic.
     - Add mock-based testing for registry parsing and uninstaller launch logic.
-- [/] **Remote Task Firing Architecture**
+- [x] **Remote Task Firing Architecture**
     - [x] Implement a mechanism to dispatch `Start-SAC` scripts to remote endpoints via `Invoke-Command -AsJob`. (Completed: `Invoke-SACRemote`)
     - [x] Enhance `Watch-SACProcessTree` to use `Get-CimInstance -ComputerName` for remote, disconnected process tree monitoring that is resilient to VPN/network drops. (Completed)
 - [ ] **Encoding & Standards Compliance**
