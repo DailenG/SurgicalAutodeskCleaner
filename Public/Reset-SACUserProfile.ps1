@@ -105,21 +105,9 @@ function Reset-SACUserProfile {
         $LocalBase = Join-Path $profile.FullName "AppData\Local\Autodesk"
         if (Test-Path $LocalBase) {
             $LocalTargets = Get-ChildItem -Path $LocalBase -Directory -ErrorAction SilentlyContinue | Where-Object {
-                $productMatch = ($TargetProducts.Count -eq 0) -or ($TargetProducts | Where-Object { $_.Name -match $_ })
-                $yearMatch    = ($TargetYears.Count -eq 0)    -or ($TargetYears | Where-Object { $_.Name -match $_ })
-                $nameMatch    = $true
-
-                if ($TargetProducts.Count -gt 0) {
-                    $nameMatch = ($TargetProducts | Where-Object { $_.FullName -match $_ }).Count -gt 0
-                }
-                if ($TargetYears.Count -gt 0 -and $nameMatch) {
-                    $nameMatch = ($TargetYears | Where-Object { $_.FullName -match $_ }).Count -gt 0
-                }
-
-                # Use the directory name itself for matching
                 $dirName = $_.Name
-                $productOk = ($TargetProducts.Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
-                $yearOk    = ($TargetYears.Count -eq 0)    -or ($TargetYears   | Where-Object { $dirName -match $_ })
+                $productOk = (@($TargetProducts).Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
+                $yearOk    = (@($TargetYears).Count -eq 0)    -or ($TargetYears   | Where-Object { $dirName -match $_ })
                 return ($productOk -and $yearOk)
             }
 

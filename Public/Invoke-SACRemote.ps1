@@ -56,9 +56,11 @@ function Sync-SACModule {
     try {
         Copy-Item -Path "$ModuleRoot\*" -Destination $RemoteStatus.BasePath -Recurse -ToSession $Session -Force -ErrorAction Stop
         Write-Host "[SAC] Sync complete." -ForegroundColor Green
+        return $RemoteStatus.BasePath
     } catch {
         Write-Host "[SAC] Warning: Failed to sync some module files (likely in-use by another process)." -ForegroundColor Yellow
         Write-Host "      Detailed Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+        return $RemoteStatus.BasePath
     }
 }
 
@@ -108,7 +110,7 @@ function Invoke-SACRemote {
     }
 
     $ScriptBlock = {
-        param($SACCommand, $DoInstall, $UseSideLoad)
+        param($SACCommand, $DoInstall, $UseSideLoad, $ExplicitPath)
         
         if ($DoInstall -and -not $UseSideLoad) {
             $hasModule = Get-Module -ListAvailable -Name SurgicalAutodeskCleaner
@@ -134,8 +136,11 @@ function Invoke-SACRemote {
             Install-Module @installParams
         }
 
-        if (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner) {
-            Import-Module SurgicalAutodeskCleaner -Force
+        # If we side-loaded, we MUST import from the explicit path to bypass version shadowing
+        $importPath = if ($UseSideLoad -and $ExplicitPath) { Join-Path $ExplicitPath "SurgicalAutodeskCleaner.psd1" } else { "SurgicalAutodeskCleaner" }
+
+        if (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner -or (Test-Path $importPath)) {
+            Import-Module $importPath -Force
             Invoke-Expression $SACCommand
         } else {
             Write-Error "SurgicalAutodeskCleaner module not found on remote host. Use -AutoInstall to attempt automated installation."
@@ -148,14 +153,15 @@ function Invoke-SACRemote {
         
         $session = New-PSSession @sessionParams
         try {
+            $syncedPath = $null
             if ($AutoInstall -and $isDevVersion) {
-                Sync-SACModule -Session $session
+                $syncedPath = Sync-SACModule -Session $session
             }
 
             $cmdParams = @{
                 Session      = $session
                 ScriptBlock  = $ScriptBlock
-                ArgumentList = @($Command, [bool]$AutoInstall, $isDevVersion)
+                ArgumentList = @($Command, [bool]$AutoInstall, $isDevVersion, $syncedPath)
             }
             if ($AsJob) { $cmdParams["AsJob"] = $true }
 
