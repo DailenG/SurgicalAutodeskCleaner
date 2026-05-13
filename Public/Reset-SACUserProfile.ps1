@@ -21,7 +21,7 @@ function Reset-SACUserProfile {
 
 .PARAMETER DeleteRoaming
     Switch. If specified, Roaming folders are DELETED instead of renamed.
-    Use with caution — this will destroy custom .cuix layouts, plot styles, etc.
+    Use with caution - this will destroy custom .cuix layouts, plot styles, etc.
 
 .PARAMETER SkipRegistry
     Switch. Skip clearing HKCU/HKU Autodesk registry keys for the user.
@@ -221,7 +221,7 @@ function Reset-SACUserProfile {
                         }
                     }
                 } else {
-                    Write-QuietLog "Could not resolve SID for user $userName — registry keys skipped."
+                    Write-QuietLog "Could not resolve SID for user $userName - registry keys skipped."
                 }
             } catch {
                 Write-QuietLog "Failed to load HKU hive for $userName : $($_.Exception.Message)"

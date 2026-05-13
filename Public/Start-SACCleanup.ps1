@@ -295,7 +295,7 @@ function Start-SACCleanup {
             Write-QuietLog "Could not parse exe path for $DisplayName. Skipping."
             return
         }
-        $FullArgs = "$ArgPart -q --silent /qn /quiet /norestart --mode unattended".Trim()
+        $FullArgs = "$ArgPart --silent /qn /quiet /norestart --mode unattended".Trim()
         try {
             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
             return $Process

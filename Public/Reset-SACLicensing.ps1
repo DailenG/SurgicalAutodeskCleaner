@@ -184,7 +184,7 @@ function Reset-SACLicensing {
                 Write-Msg "No Autodesk FLEXnet stubs found." "Info"
             }
         } else {
-            Write-Msg "FLEXnet directory not found — skipping." "Info"
+            Write-Msg "FLEXnet directory not found - skipping." "Info"
         }
     }
 
@@ -201,7 +201,7 @@ function Reset-SACLicensing {
                 Write-Msg "AdskLicensing could not be restarted. You may need to reboot." "Warning"
             }
         } else {
-            Write-Msg "AdskLicensing service not present on this machine — skipping restart." "Info"
+            Write-Msg "AdskLicensing service not present on this machine - skipping restart." "Info"
         }
     }
 
