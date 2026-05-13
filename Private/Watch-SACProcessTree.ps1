@@ -44,6 +44,7 @@ function Watch-SACProcessTree {
     if ($PSCmdlet.ParameterSetName -eq "ProcessObject") {
         $RootPID = $RootProcess.Id
     }
+
     $CimSession = if ($ComputerName -ne "localhost") { 
         $opt = New-CimSessionOption -Protocol Dcom -ConnectTimeoutMs 5000
         New-CimSession -ComputerName $ComputerName -SessionOption $opt -ErrorAction SilentlyContinue 
@@ -58,9 +59,13 @@ function Watch-SACProcessTree {
             $KnownProcs[$RootPID] = $rootCim.CreationDate 
         }
     } catch {
-        # If it exited before we could grab WMI info, we still add it so we can at least try to find children 
-        # spawned in the same second, though it's less reliable.
-        $KnownProcs[$RootPID] = $StartTime
+        # If it exited before we could grab CIM info, we try to use the StartTime from the process object
+        # as a fallback for PID recycling defense.
+        if ($PSCmdlet.ParameterSetName -eq "ProcessObject") {
+            try { $KnownProcs[$RootPID] = $RootProcess.StartTime } catch { $KnownProcs[$RootPID] = $StartTime }
+        } else {
+            $KnownProcs[$RootPID] = $StartTime
+        }
     }
 
     # Helper function to update the known process tree
@@ -75,7 +80,7 @@ function Watch-SACProcessTree {
         if (-not $allProcs) { return $null }
 
         # Build a quick lookup dictionary for this loop
-        $currentProcs = @{}
+        $currentProcs = @{ "TotalCount" = $allProcs.Count }
         foreach ($p in $allProcs) {
             $currentProcs[$p.ProcessId] = $p
         }
@@ -88,7 +93,8 @@ function Watch-SACProcessTree {
                 if (-not $KnownProcs.ContainsKey($p.ProcessId) -and $KnownProcs.ContainsKey($p.ParentProcessId)) {
                     $parentCreationTime = $KnownProcs[$p.ParentProcessId]
                     # PID Recycling Defense: The child must be created at or after the parent's creation time.
-                    if ($p.CreationDate -ge $parentCreationTime) {
+                    # Note: We allow a 2-second margin for potential clock skew or StartTime vs CreationDate deltas.
+                    if ($p.CreationDate -ge $parentCreationTime.AddSeconds(-2)) {
                         $KnownProcs[$p.ProcessId] = $p.CreationDate
                         $addedNew = $true
                     }
@@ -137,20 +143,24 @@ function Watch-SACProcessTree {
         foreach ($knownPid in $KnownProcs.Keys) {
             # Ensure the PID hasn't been recycled by checking CreationDate against our state
             $cimProc = $currentCimProcs[$knownPid]
-            if ($null -ne $cimProc -and $cimProc.CreationDate -eq $KnownProcs[$knownPid]) {
-                $activeCount++
-                
-                # Resilient: Use CIM properties for remote monitoring, Get-Process for local
-                if ($ComputerName -ne "localhost") {
-                    # WMI KernelModeTime/UserModeTime are 100ns units
-                    $totalCpu += ($cimProc.KernelModeTime + $cimProc.UserModeTime) / 10000000
-                    $totalMemMB += ($cimProc.WorkingSetSize / 1MB)
-                } else {
-                    try {
-                        $p = Get-Process -Id $knownPid -ErrorAction Stop
-                        $totalCpu += $p.CPU
-                        $totalMemMB += ($p.WorkingSet64 / 1MB)
-                    } catch {}
+            if ($null -ne $cimProc) {
+                # We check for exact match or close match (within 2s) if we had to fallback to StartTime
+                $expectedDate = $KnownProcs[$knownPid]
+                if ($cimProc.CreationDate -eq $expectedDate -or [math]::Abs(($cimProc.CreationDate - $expectedDate).TotalSeconds) -lt 2) {
+                    $activeCount++
+                    
+                    # Resilient: Use CIM properties for remote monitoring, Get-Process for local
+                    if ($ComputerName -ne "localhost") {
+                        # WMI KernelModeTime/UserModeTime are 100ns units
+                        $totalCpu += ($cimProc.KernelModeTime + $cimProc.UserModeTime) / 10000000
+                        $totalMemMB += ($cimProc.WorkingSetSize / 1MB)
+                    } else {
+                        try {
+                            $p = Get-Process -Id $knownPid -ErrorAction Stop
+                            $totalCpu += $p.CPU
+                            $totalMemMB += ($p.WorkingSet64 / 1MB)
+                        } catch {}
+                    }
                 }
             }
         }
@@ -158,15 +168,30 @@ function Watch-SACProcessTree {
         # Root logic: The root process must be truly dead 
         # (Using CIM check if remote or if monitored by PID, otherwise .NET object)
         $rootIsDead = if ($ComputerName -ne "localhost" -or $PSCmdlet.ParameterSetName -eq "ProcessID") {
-            $rootAlive = $null -ne $currentCimProcs -and $currentCimProcs.ContainsKey($RootPID) -and $currentCimProcs[$RootPID].CreationDate -eq $KnownProcs[$RootPID]
+            $rootAlive = $null -ne $currentCimProcs -and $currentCimProcs.ContainsKey($RootPID)
+            if ($rootAlive) {
+                $expectedDate = $KnownProcs[$RootPID]
+                $rootAlive = ($currentCimProcs[$RootPID].CreationDate -eq $expectedDate -or [math]::Abs(($currentCimProcs[$RootPID].CreationDate - $expectedDate).TotalSeconds) -lt 2)
+            }
             -not $rootAlive
         } else {
-            $RootProcess.HasExited
+            try {
+                $RootProcess.Refresh()
+                $RootProcess.HasExited
+            } catch { $true } # If we can't even refresh, it's likely gone
         }
 
+        # Final exit condition: Root is dead AND no active descendants found
         if ($rootIsDead -and $activeCount -eq 0) {
             Write-Host "`n  [*] Process tree for $DisplayName has exited cleanly." -ForegroundColor Green
             break
+        }
+
+        # Safety fallback: If root is dead and we've seen 0 active procs for 3 seconds, 
+        # and CIM successfully returned a process list, assume we're done.
+        if ($rootIsDead -and $activeCount -eq 0 -and $elapsed.TotalSeconds -gt 3 -and $null -ne $currentCimProcs) {
+             Write-Host "`n  [*] No active descendants found for $DisplayName. Monitor closing." -ForegroundColor Green
+             break
         }
 
         # 3. Enhanced Zombie Detection (Idle CPU + Static Memory)
