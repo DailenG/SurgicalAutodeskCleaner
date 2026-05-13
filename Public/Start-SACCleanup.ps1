@@ -148,16 +148,17 @@ function Start-SACCleanup {
             if (Test-Path $basePath) {
                 Get-ChildItem -Path $basePath -Filter $SearchPattern -Directory -ErrorAction SilentlyContinue | ForEach-Object {
                     $fp = $_.FullName
-                    try { Remove-Item -Path $fp -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+                    $purgeResult = Invoke-SACRobocopyPurge -TargetPath $fp
                     
-                    if (Test-Path $fp) {
-                        Start-Process -FilePath "cmd.exe" -ArgumentList "/c del /f /s /q `"$fp\*`" >nul 2>&1" -Wait -NoNewWindow
-                        Start-Process -FilePath "cmd.exe" -ArgumentList "/c rmdir /s /q `"$fp`" >nul 2>&1" -Wait -NoNewWindow
-                    }
-                    
-                    if (Test-Path $fp) {
+                    if (-not $purgeResult.Success) {
                         Write-QuietLog "Failed to fully remove directory $fp (files likely locked)."
-                        $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = "Files are locked/in-use." }
+                        
+                        $failReason = "Files are locked/in-use."
+                        if ($purgeResult.LockedItems.Count -gt 0) {
+                            $failReason += " Locked Items: $($purgeResult.LockedItems -join ', ')"
+                        }
+                        
+                        $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
                     } else {
                         Write-Msg "Purged orphaned directory: $fp" "Success"
                     }

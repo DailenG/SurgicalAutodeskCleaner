@@ -30,7 +30,7 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 **Surgical Autodesk Cleaner** takes a different approach:
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
 - **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
-- **Deep Cleansing:** Purges orphaned installation directories and handles cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
+- **Deep Cleansing:** Purges orphaned installation directories using an enterprise-grade `robocopy /MIR` engine to bypass PowerShell's `MAX_PATH` limits and gracefully handle locked files, and destroys cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
 - **Robust Pathing:** Automatically detects and utilizes $env:TEMP if C:\temp is unavailable, ensuring deployment reliability on locked-down systems.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
 - **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
