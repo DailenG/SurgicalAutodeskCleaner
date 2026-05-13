@@ -15,29 +15,45 @@ function Watch-SACProcessTree {
     .PARAMETER IdleTimeoutMinutes
         The maximum time (in minutes) the aggregate CPU time can remain unchanged before the tree is considered hung and force-killed.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName="ProcessObject")]
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$true, ParameterSetName="ProcessObject")]
         [System.Diagnostics.Process]$RootProcess,
+
+        [Parameter(Mandatory=$true, ParameterSetName="ProcessID")]
+        [int]$RootPID,
         
         [string]$DisplayName = "Process",
         [int]$TimeoutMinutes = 20,
         [int]$IdleTimeoutMinutes = 5,
-        [string]$TailLogFile = $null
+        [string]$TailLogFile = $null,
+
+        [string]$ComputerName = "localhost"
     )
 
     $StartTime = Get-Date
     $ZeroCpuTime = $null
     $LastTotalCpu = $null
+    $LastTotalMem = $null
+    $StaticActivityTime = $null
     
     # We maintain a stateful dictionary of known processes: PID -> CreationDate
     # This completely eliminates PID recycling vulnerabilities.
     $KnownProcs = @{}
     
-    $RootPID = $RootProcess.Id
+    if ($PSCmdlet.ParameterSetName -eq "ProcessObject") {
+        $RootPID = $RootProcess.Id
+    }
+    $CimSession = if ($ComputerName -ne "localhost") { 
+        $opt = New-CimSessionOption -Protocol Dcom -ConnectTimeoutMs 5000
+        New-CimSession -ComputerName $ComputerName -SessionOption $opt -ErrorAction SilentlyContinue 
+    } else { $null }
     
     try {
-        $rootCim = Get-CimInstance Win32_Process -Filter "ProcessId = $RootPID" -ErrorAction Stop
+        $cimParams = @{ Classname = "Win32_Process"; Filter = "ProcessId = $RootPID"; ErrorAction = "Stop" }
+        if ($CimSession) { $cimParams["CimSession"] = $CimSession }
+        
+        $rootCim = Get-CimInstance @cimParams
         if ($rootCim) { 
             $KnownProcs[$RootPID] = $rootCim.CreationDate 
         }
@@ -49,8 +65,14 @@ function Watch-SACProcessTree {
 
     # Helper function to update the known process tree
     function Update-KnownTree {
-        $allProcs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
-        if (-not $allProcs) { return }
+        param($Session, $Computer)
+        
+        $cimParams = @{ Classname = "Win32_Process"; ErrorAction = "SilentlyContinue" }
+        if ($Session) { $cimParams["CimSession"] = $Session }
+        elseif ($Computer -ne "localhost") { $cimParams["ComputerName"] = $Computer }
+
+        $allProcs = Get-CimInstance @cimParams
+        if (-not $allProcs) { return $null }
 
         # Build a quick lookup dictionary for this loop
         $currentProcs = @{}
@@ -76,10 +98,7 @@ function Watch-SACProcessTree {
         return $currentProcs
     }
 
-    $isRemote = $false
-    if (Get-Command Test-SACRemoteSession -ErrorAction SilentlyContinue) {
-        $isRemote = Test-SACRemoteSession
-    }
+    $isRemote = ($ComputerName -ne "localhost") -or (Test-SACRemoteSession)
 
     Write-Host "`n  Monitoring process tree for $DisplayName..." -ForegroundColor Cyan
 
@@ -87,13 +106,25 @@ function Watch-SACProcessTree {
         $elapsed = (Get-Date) - $StartTime
 
         # Update our stateful tree with any new descendants
-        $currentCimProcs = Update-KnownTree
+        $currentCimProcs = Update-KnownTree -Session $CimSession -Computer $ComputerName
+        
+        # Resilient Monitoring: Handle connection drops
+        if ($null -eq $currentCimProcs -and $ComputerName -ne "localhost") {
+            Write-Host "`n  [!] Connection lost to $ComputerName. Retrying..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 5
+            if ($CimSession) { $CimSession | Remove-CimSession; $CimSession = New-CimSession -ComputerName $ComputerName -ErrorAction SilentlyContinue }
+            continue
+        }
 
         # 1. Check Hard Timeout
         if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
             Write-Host "`n  [!] Hard timeout ($TimeoutMinutes m) reached for $DisplayName. Terminating tree." -ForegroundColor Red
             foreach ($pidToKill in $KnownProcs.Keys) {
-                try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+                if ($ComputerName -ne "localhost") {
+                    Invoke-CimMethod -Query "SELECT * FROM Win32_Process WHERE ProcessId = $pidToKill" -MethodName Terminate -ErrorAction SilentlyContinue
+                } else {
+                    try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+                }
             }
             break
         }
@@ -108,35 +139,58 @@ function Watch-SACProcessTree {
             $cimProc = $currentCimProcs[$knownPid]
             if ($null -ne $cimProc -and $cimProc.CreationDate -eq $KnownProcs[$knownPid]) {
                 $activeCount++
-                try {
-                    # Get-Process is needed for accurate CPU/Memory
-                    $p = Get-Process -Id $knownPid -ErrorAction Stop
-                    $totalCpu += $p.CPU
-                    $totalMemMB += ($p.WorkingSet64 / 1MB)
-                } catch {}
+                
+                # Resilient: Use CIM properties for remote monitoring, Get-Process for local
+                if ($ComputerName -ne "localhost") {
+                    # WMI KernelModeTime/UserModeTime are 100ns units
+                    $totalCpu += ($cimProc.KernelModeTime + $cimProc.UserModeTime) / 10000000
+                    $totalMemMB += ($cimProc.WorkingSetSize / 1MB)
+                } else {
+                    try {
+                        $p = Get-Process -Id $knownPid -ErrorAction Stop
+                        $totalCpu += $p.CPU
+                        $totalMemMB += ($p.WorkingSet64 / 1MB)
+                    } catch {}
+                }
             }
         }
 
-        # Root logic: The root process must be truly dead (using the .NET object) 
-        # and no valid known children can be active.
-        if ($RootProcess.HasExited -and $activeCount -eq 0) {
+        # Root logic: The root process must be truly dead 
+        # (Using CIM check if remote or if monitored by PID, otherwise .NET object)
+        $rootIsDead = if ($ComputerName -ne "localhost" -or $PSCmdlet.ParameterSetName -eq "ProcessID") {
+            $rootAlive = $null -ne $currentCimProcs -and $currentCimProcs.ContainsKey($RootPID) -and $currentCimProcs[$RootPID].CreationDate -eq $KnownProcs[$RootPID]
+            -not $rootAlive
+        } else {
+            $RootProcess.HasExited
+        }
+
+        if ($rootIsDead -and $activeCount -eq 0) {
             Write-Host "`n  [*] Process tree for $DisplayName has exited cleanly." -ForegroundColor Green
             break
         }
 
-        # 3. Check Idle Timeout
-        if ($null -ne $LastTotalCpu -and $totalCpu -eq $LastTotalCpu) {
-            if ($null -eq $ZeroCpuTime) { $ZeroCpuTime = Get-Date }
-            elseif (((Get-Date) - $ZeroCpuTime).TotalMinutes -ge $IdleTimeoutMinutes) {
-                Write-Host "`n  [!] Process tree idle timeout ($IdleTimeoutMinutes m) reached for $DisplayName. Terminating tree." -ForegroundColor Yellow
+        # 3. Enhanced Zombie Detection (Idle CPU + Static Memory)
+        # If an uninstaller hangs on a hidden dialog, CPU usage is 0 and WorkingSet is usually static.
+        $isIdle = ($null -ne $LastTotalCpu -and $totalCpu -eq $LastTotalCpu)
+        $isStaticMem = ($null -ne $LastTotalMem -and [math]::Abs($totalMemMB - $LastTotalMem) -lt 0.1)
+
+        if ($isIdle -and $isStaticMem) {
+            if ($null -eq $StaticActivityTime) { $StaticActivityTime = Get-Date }
+            elseif (((Get-Date) - $StaticActivityTime).TotalMinutes -ge $IdleTimeoutMinutes) {
+                Write-Host "`n  [!] Zombie process detected (Idle CPU/Static Mem for $IdleTimeoutMinutes m) for $DisplayName. Terminating tree." -ForegroundColor Yellow
                 foreach ($pidToKill in $KnownProcs.Keys) {
-                    try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+                    if ($ComputerName -ne "localhost") {
+                         Invoke-CimMethod -Query "SELECT * FROM Win32_Process WHERE ProcessId = $pidToKill" -MethodName Terminate -ErrorAction SilentlyContinue
+                    } else {
+                         try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+                    }
                 }
                 break
             }
         } else {
-            $ZeroCpuTime = $null
+            $StaticActivityTime = $null
             $LastTotalCpu = $totalCpu
+            $LastTotalMem = $totalMemMB
         }
 
         # 4. UI Feedback
@@ -162,8 +216,6 @@ function Watch-SACProcessTree {
             $elapsedStr = "{0:mm\:ss}" -f $elapsed
             $memStr = [math]::Round($totalMemMB, 1)
             $statusLine = "    [Elapsed: $elapsedStr] | [Active Procs: $activeCount] | [Tree Mem: ${memStr}MB]$tailPart"
-            # Pad with spaces to overwrite previous line completely
-            # We use a larger padding just in case the tail fluctuates in size
             $statusLine = $statusLine.PadRight(130)
             Write-Host "`r$statusLine" -NoNewline -ForegroundColor DarkGray
         }
@@ -172,4 +224,6 @@ function Watch-SACProcessTree {
     }
     
     if (-not $isRemote) { Write-Host "" } # Newline cleanup
+    if ($CimSession) { $CimSession | Remove-CimSession }
 }
+

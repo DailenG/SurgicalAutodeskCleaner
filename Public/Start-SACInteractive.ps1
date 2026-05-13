@@ -16,6 +16,15 @@ function Start-SACInteractive {
         [switch]$ScanOnly
     )
 
+    # State for remote targeting
+    if ($null -eq $script:SACTarget) {
+        $script:SACTarget = [PSCustomObject]@{
+            ComputerName = "localhost"
+            Credential   = $null
+            IsRemote     = $false
+        }
+    }
+
     # Shared helpers (Test-SACRemoteSession and Invoke-SACPause) are imported from the Private folder.
 
     # -------------------------------------------------------------------------
@@ -77,13 +86,23 @@ function Start-SACInteractive {
             'Fusion','Vault','ReCap','Advance Steel','BIM 360','InfraWorks'
         )
 
-        $all = Get-ItemProperty -Path @(
-            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        ) -ErrorAction SilentlyContinue |
-            Where-Object { $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk' } |
-            Where-Object { $_.DisplayName -match '\b20\d{2}\b' } |
-            Select-Object -ExpandProperty DisplayName -Unique
+        $registryBlock = {
+            Get-ItemProperty -Path @(
+                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+            ) -ErrorAction SilentlyContinue |
+                Where-Object { $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk' } |
+                Where-Object { $_.DisplayName -match '\b20\d{2}\b' } |
+                Select-Object -ExpandProperty DisplayName -Unique
+        }
+
+        $all = if ($script:SACTarget.IsRemote) {
+            Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $registryBlock -ErrorAction SilentlyContinue
+        } else {
+            & $registryBlock
+        }
+
+        if (-not $all) { return @() }
 
         # Score: 0 = primary product, 1 = everything else
         $sorted = $all | Sort-Object {
@@ -96,19 +115,24 @@ function Start-SACInteractive {
     }
 
 
-    # -------------------------------------------------------------------------
-    # Surgical Cleanup flow (product + year selection -> Start-SACCleanup)
-    # -------------------------------------------------------------------------
     function Invoke-SurgicalCleanupFlow {
         param ([bool]$ScanOnly = $false, [switch]$BuildScript)
 
         Write-Host "`nScanning registry for installed Autodesk products..." -ForegroundColor Cyan
 
-        $UninstallKeys = Get-ItemProperty -Path @(
-            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        ) -ErrorAction SilentlyContinue | Where-Object {
-            $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk'
+        $discoveryBlock = {
+            Get-ItemProperty -Path @(
+                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+            ) -ErrorAction SilentlyContinue | Where-Object {
+                $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk'
+            }
+        }
+
+        $UninstallKeys = if ($script:SACTarget.IsRemote) {
+            Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $discoveryBlock -ErrorAction SilentlyContinue
+        } else {
+            & $discoveryBlock
         }
 
         if (-not $UninstallKeys) {
@@ -185,10 +209,7 @@ function Start-SACInteractive {
             foreach ($product in $SelectedProducts) {
                 foreach ($year in $SelectedYears) {
                     $PackageName = "*$product*$year*"
-                    $keys = Get-ItemProperty -Path @(
-                        'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-                    ) -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like $PackageName }
+                    $keys = $UninstallKeys | Where-Object { $_.DisplayName -like $PackageName }
 
                     foreach ($app in $keys) {
                         $actionType = if ($app.PSChildName -match '^{.*}$' -and $app.UninstallString -match '^MsiExec\.exe') { "MSI Uninstall" } else { "Custom Uninstall" }
@@ -201,33 +222,64 @@ function Start-SACInteractive {
                 }
             }
 
-            $ProcessesToKill = @("acad*","AcEventSync*","AcQMod*","revit*","3dsmax*","maya*","inventor*","roamer*","navisworks*","recap*","dwgviewr*")
-            foreach ($procPattern in $ProcessesToKill) {
-                Get-Process -Name $procPattern -ErrorAction SilentlyContinue | ForEach-Object {
-                    $Report += [PSCustomObject]@{
-                        Action="Terminate Process"; ComponentType="Active Process"
-                        TargetProduct="Global"; TargetYear="Global"
-                        DisplayName="$($_.ProcessName).exe"; Detail="PID: $($_.Id)"
+            # Process discovery (remote-aware)
+            $processDiscoveryBlock = {
+                $ProcessesToKill = @("acad*","AcEventSync*","AcQMod*","revit*","3dsmax*","maya*","inventor*","roamer*","navisworks*","recap*","dwgviewr*")
+                $results = @()
+                foreach ($procPattern in $ProcessesToKill) {
+                    Get-Process -Name $procPattern -ErrorAction SilentlyContinue | ForEach-Object {
+                        $results += [PSCustomObject]@{ Name = $_.ProcessName; Id = $_.Id }
                     }
+                }
+                return $results
+            }
+
+            $FoundProcesses = if ($script:SACTarget.IsRemote) {
+                Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $processDiscoveryBlock -ErrorAction SilentlyContinue
+            } else {
+                & $processDiscoveryBlock
+            }
+
+            foreach ($p in $FoundProcesses) {
+                $Report += [PSCustomObject]@{
+                    Action="Terminate Process"; ComponentType="Active Process"
+                    TargetProduct="Global"; TargetYear="Global"
+                    DisplayName="$($p.Name).exe"; Detail="PID: $($p.Id)"
                 }
             }
 
-            $SafePathsToSearch = @(
-                "$($env:ProgramFiles)\Autodesk","$(${env:ProgramFiles(x86)})\Autodesk",
-                "$($env:ProgramData)\Autodesk","$($env:PUBLIC)\Documents\Autodesk",
-                "C:\Users\*\AppData\Local\Autodesk","C:\Users\*\AppData\Roaming\Autodesk"
-            )
-            foreach ($product in $SelectedProducts) {
-                foreach ($year in $SelectedYears) {
-                    foreach ($basePath in $SafePathsToSearch) {
-                        Get-ChildItem -Path $basePath -Filter "*$product*$year*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                            $Report += [PSCustomObject]@{
-                                Action="Purge Directory"; ComponentType="Orphaned Folder"
-                                TargetProduct=$product; TargetYear=$year
-                                DisplayName=$_.Name; Detail=$_.FullName
+            # File system discovery (remote-aware)
+            $fsDiscoveryBlock = {
+                param($prods, $years)
+                $SafePathsToSearch = @(
+                    "$($env:ProgramFiles)\Autodesk","$(${env:ProgramFiles(x86)})\Autodesk",
+                    "$($env:ProgramData)\Autodesk","$($env:PUBLIC)\Documents\Autodesk",
+                    "C:\Users\*\AppData\Local\Autodesk","C:\Users\*\AppData\Roaming\Autodesk"
+                )
+                $results = @()
+                foreach ($product in $prods) {
+                    foreach ($year in $years) {
+                        foreach ($basePath in $SafePathsToSearch) {
+                            Get-ChildItem -Path $basePath -Filter "*$product*$year*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                                $results += [PSCustomObject]@{ Name = $_.Name; FullName = $_.FullName; Product = $product; Year = $year }
                             }
                         }
                     }
+                }
+                return $results
+            }
+
+            $FoundDirs = if ($script:SACTarget.IsRemote) {
+                Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $fsDiscoveryBlock -ArgumentList $SelectedProducts, $SelectedYears -ErrorAction SilentlyContinue
+            } else {
+                & $fsDiscoveryBlock $SelectedProducts $SelectedYears
+            }
+
+            foreach ($d in $FoundDirs) {
+                $Report += [PSCustomObject]@{
+                    Action="Purge Directory"; ComponentType="Orphaned Folder"
+                    TargetProduct=$d.Product; TargetYear=$d.Year
+                    DisplayName=$d.Name; Detail=$d.FullName
                 }
             }
 
@@ -241,6 +293,8 @@ function Start-SACInteractive {
                 Write-Host "Scan Complete! No matching components would be removed.`n" -ForegroundColor Yellow
             }
         } elseif ($BuildScript) {
+            # ... (BuildScript logic stays largely the same for now, as it generates a local script)
+            # ... (omitted for brevity in this replace call, will keep it if it fits)
             Write-Host "`nGenerating Deployment Script..." -ForegroundColor Cyan
             $OutPath = "$([Environment]::GetFolderPath('Desktop'))\SAC_Deployment_$(Get-Date -Format 'yyyyMMdd_HHmmss').ps1"
             $prodString = ($SelectedProducts | ForEach-Object { "`"$_`"" }) -join ", "
@@ -284,8 +338,17 @@ $command
             Write-Host "Raw Command:" -ForegroundColor Cyan
             Write-Host "  $command`n" -ForegroundColor Gray
         } else {
-            Write-Host "`nExecuting Surgical Cleanup..." -ForegroundColor Cyan
-            Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears -AnyVendor
+            if ($script:SACTarget.IsRemote) {
+                Write-Host "`nDispatching Surgical Cleanup to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
+                $prodArgs = ($SelectedProducts | ForEach-Object { "`"$_`"" }) -join ","
+                $yearArgs = $SelectedYears -join ","
+                $remoteCmd = "Start-SACCleanup -TargetProducts $prodArgs -TargetYears $yearArgs -AnyVendor -Silent"
+                
+                Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command $remoteCmd -AutoInstall
+            } else {
+                Write-Host "`nExecuting Surgical Cleanup..." -ForegroundColor Cyan
+                Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears -AnyVendor
+            }
         }
     }
 
@@ -333,7 +396,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.2.2-beta"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.3.0-beta"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -387,6 +450,9 @@ $command
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
             Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color $vColor
         }
+        Write-Host $borderLine    -ForegroundColor DarkCyan
+        $targetStr = if ($script:SACTarget.IsRemote) { "$($script:SACTarget.ComputerName) ($($script:SACTarget.Credential.UserName))" } else { "Local Machine" }
+        Write-BoxLine -Text "  [T]  Target Remote Machine  Currently: $targetStr" -Color "Yellow"
         Write-BoxLine -Text "  [Q]  Quit"
         if ($PSVersionTable.PSVersion.Major -lt 7) {
             Write-Host $borderLine    -ForegroundColor DarkCyan
@@ -411,7 +477,12 @@ $command
                 Write-Host "  registry data will be forcefully removed from this machine.`n" -ForegroundColor Yellow
                 $confirm = Read-Host "  Type 'PURGE' to confirm"
                 if ($confirm -eq "PURGE") {
-                    Start-SACPurge
+                    if ($script:SACTarget.IsRemote) {
+                        Write-Host "`n  Dispatching Master Purge to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
+                        Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Start-SACPurge -Silent" -AutoInstall
+                    } else {
+                        Start-SACPurge
+                    }
                 } else {
                     Write-Host "  Master Purge cancelled." -ForegroundColor Yellow
                 }
@@ -426,10 +497,12 @@ $command
                 $delChoice = Read-Host "  Delete Roaming instead of rename? (y/N)"
                 if ($delChoice.Trim().ToLower() -eq "y") { $delRoaming = $true }
 
-                if ($delRoaming) {
-                    Reset-SACUserProfile -DeleteRoaming
+                if ($script:SACTarget.IsRemote) {
+                    Write-Host "`n  Dispatching Profile Reset to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
+                    $flags = if ($delRoaming) { "-DeleteRoaming -Silent" } else { "-Silent" }
+                    Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACUserProfile $flags" -AutoInstall
                 } else {
-                    Reset-SACUserProfile
+                    if ($delRoaming) { Reset-SACUserProfile -DeleteRoaming } else { Reset-SACUserProfile }
                 }
                 Invoke-SACPause
             }
@@ -437,10 +510,14 @@ $command
             "4" {
                 Write-Host "`n  FlexNet (adsk* stubs) removal is optional.`n" -ForegroundColor Cyan
                 $flexChoice = Read-Host "  Also remove Autodesk FlexNet stubs? (y/N)"
-                if ($flexChoice.Trim().ToLower() -eq "y") {
-                    Reset-SACLicensing -IncludeFlexNet
+                $includeFlex = ($flexChoice.Trim().ToLower() -eq "y")
+
+                if ($script:SACTarget.IsRemote) {
+                    Write-Host "`n  Dispatching Licensing Reset to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
+                    $flags = if ($includeFlex) { "-IncludeFlexNet -Silent" } else { "-Silent" }
+                    Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACLicensing $flags" -AutoInstall
                 } else {
-                    Reset-SACLicensing
+                    if ($includeFlex) { Reset-SACLicensing -IncludeFlexNet } else { Reset-SACLicensing }
                 }
                 Invoke-SACPause
             }
@@ -473,6 +550,26 @@ $command
                     Write-Host "`nNo attention items found or log file missing." -ForegroundColor Yellow
                     Start-Sleep -Seconds 1
                 }
+            }
+
+            "T" {
+                $comp = Read-Host "`n  Enter remote computer name (or 'local' to reset)"
+                if ($comp.Trim().ToLower() -eq "local" -or [string]::IsNullOrWhiteSpace($comp)) {
+                    $script:SACTarget = [PSCustomObject]@{ ComputerName = "localhost"; Credential = $null; IsRemote = $false }
+                    Write-Host "  Target reset to local machine." -ForegroundColor Green
+                } else {
+                    $res = Connect-SACTarget -ComputerName $comp.Trim()
+                    if ($res.Connected) {
+                        $script:SACTarget = [PSCustomObject]@{ 
+                            ComputerName = $res.ComputerName; 
+                            Credential = $res.Credential; 
+                            IsRemote = ($res.ComputerName -ne "localhost") 
+                        }
+                        # Re-scan installed products for the new target
+                        $installedProducts = Get-InstalledAutodeskSummary
+                    }
+                }
+                Start-Sleep -Seconds 1
             }
 
             "Q" {

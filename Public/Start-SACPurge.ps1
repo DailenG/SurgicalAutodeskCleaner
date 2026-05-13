@@ -334,7 +334,10 @@ function Start-SACPurge {
                 $FullArgs = "$($Arguments) --silent /qn /quiet /norestart --mode unattended".Trim()
             
                 try {
-                    return Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
+                    # Use cmd /c with NUL redirection to discourage interactive prompts from hanging the process.
+                    # We still use Start-Process -PassThru to get the PID for the Supervisor.
+                    $cmdArgs = "/c `"`"$ExePath`" $FullArgs < NUL`""
+                    return Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                 }
                 catch {
                     Write-SACQuietLog "Failed to execute custom uninstaller for $($DisplayName): $($_.Exception.Message)"

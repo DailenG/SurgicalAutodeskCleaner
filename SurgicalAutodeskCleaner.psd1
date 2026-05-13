@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '2.2.2'
+    ModuleVersion     = '2.3.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -42,6 +42,7 @@ Features:
 - Reset-SACUserProfile: Resets per-user Autodesk AppData (rename Roaming, delete Local) for a clean-start experience without destroying user customizations.
 - Reset-SACLicensing: Wipes CLM, AdskLicensing, and SSO token cache to force clean re-authentication. Resolves stuck activation and seat reservation issues.
 - Restore-SACUserProfile: Lists, restores, or purges Roaming profile backups created by Reset-SACUserProfile.
+- Invoke-SACRemote: Dispatches SAC tasks to remote endpoints via WinRM.
 
 Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
 
@@ -84,7 +85,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
     # NestedModules = @()
 
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan', 'Reset-SACUserProfile', 'Reset-SACLicensing', 'Restore-SACUserProfile'
+    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan', 'Reset-SACUserProfile', 'Reset-SACLicensing', 'Restore-SACUserProfile', 'Invoke-SACRemote'
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
     CmdletsToExport   = '*'

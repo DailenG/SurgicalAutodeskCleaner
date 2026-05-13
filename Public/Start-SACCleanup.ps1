@@ -279,7 +279,10 @@ function Start-SACCleanup {
         }
         $FullArgs = "$ArgPart --silent /qn /quiet /norestart --mode unattended".Trim()
         try {
-            $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
+            # Use cmd /c with NUL redirection to discourage interactive prompts from hanging the process.
+            # We still use Start-Process -PassThru to get the PID for the Supervisor.
+            $cmdArgs = "/c `"`"$ExePath`" $FullArgs < NUL`""
+            $Process = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
             return $Process
         } catch {
             $msg = $_.Exception.Message
