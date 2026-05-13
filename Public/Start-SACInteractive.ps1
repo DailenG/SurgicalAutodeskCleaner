@@ -53,10 +53,8 @@ function Start-SACInteractive {
             }
             if (Get-Command Out-ConsoleGridView -ErrorAction SilentlyContinue) {
                 try {
-                    $mode = if ($ViewerOnly) { "None" } else { "Multiple" }
-                    $hint = if ($ViewerOnly) { "(ENTER = Close)" } else { "(CTRL-A = Select All | SPACE = Toggle | ENTER = Confirm)" }
-                    $selected = $Items | Out-ConsoleGridView -Title "$Title  $hint" -OutputMode $mode -ErrorAction Stop
-                    if ($ViewerOnly) { return $null }
+                    $hint = if ($ViewerOnly) { "(Select items to copy to clipboard | ENTER = Close)" } else { "(CTRL-A = Select All | SPACE = Toggle | ENTER = Confirm)" }
+                    $selected = $Items | Out-ConsoleGridView -Title "$Title  $hint" -OutputMode Multiple -ErrorAction Stop
                     if ($selected) { return @($selected) }
                     return @()
                 } catch {
@@ -73,11 +71,14 @@ function Start-SACInteractive {
             Write-Host "$($i+1). $($Items[$i])"
         }
         
+        $inputStr = ""
         if ($ViewerOnly) {
-            return $null
+            $inputStr = Read-Host "`n(Optional) Enter numbers to copy to clipboard (or press Enter to return)"
+        } else {
+            $inputStr = Read-Host "`nEnter numbers to select (comma-separated, or 0 for all)"
         }
 
-        $inputStr = Read-Host "`nEnter numbers to select (comma-separated, or 0 for all)"
+        if ([string]::IsNullOrWhiteSpace($inputStr)) { return @() }
         if ($inputStr -match '0') { return $Items }
         $selected = @()
         $indices = $inputStr -split ',' | ForEach-Object { $_.Trim() }
@@ -638,7 +639,16 @@ $command
             }
 
             "8" {
-                Invoke-SACSelection -Items $installedProducts -Title "Detected Autodesk Products on ${targetStr}" -ViewerOnly
+                $selected = Invoke-SACSelection -Items $installedProducts -Title "Detected Autodesk Products on ${targetStr}" -ViewerOnly
+                if ($selected) {
+                    try {
+                        $text = $selected -join "`r`n"
+                        $text | Set-Clipboard -ErrorAction Stop
+                        Write-Host "`n  [OK] $($selected.Count) product(s) copied to clipboard." -ForegroundColor Green
+                    } catch {
+                        Write-Host "`n  [!] Failed to copy to clipboard (terminal/host restriction)." -ForegroundColor Yellow
+                    }
+                }
                 Invoke-SACPause
             }
 
