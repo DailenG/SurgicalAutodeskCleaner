@@ -44,16 +44,11 @@
         [Parameter(ParameterSetName="Restore", Mandatory=$true)][string]$BackupPath,
         [Parameter(ParameterSetName="Purge", Mandatory=$true)][switch]$Purge,
         [switch]$Silent
-    )
+        )
 
-    function Write-Msg {
-        param ([string]$Message, [ValidateSet("Info","Success","Warning","Error")][string]$Type = "Info")
-        $ts  = "[$(Get-Date -Format 'HH:mm:ss')]"
-        $clr = @{ Info="Cyan"; Success="Green"; Warning="Yellow"; Error="Red" }
-        Write-Host "$ts $Message" -ForegroundColor $clr[$Type]
-    }
+        # --- Helper Functions (Centralized) ---
 
-    $BackupPattern = "*_SAC_BACKUP_*"
+        $BackupSuffixPattern = "*_SAC_BACKUP_*"
 
     # --- Discover all backups ---
     $AllBackups = Get-ChildItem -Path "C:\Users\*\AppData\Roaming\Autodesk" -Filter $BackupPattern -Directory -ErrorAction SilentlyContinue
@@ -76,7 +71,7 @@
 
     if ($Restore) {
         if (-not (Test-Path $BackupPath)) {
-            Write-Msg "Backup path not found: $BackupPath" "Error"
+            Write-SACMsg "Backup path not found: $BackupPath" "Error"
             return
         }
 
@@ -84,16 +79,16 @@
         $OriginalPath = $BackupPath -replace "_SAC_BACKUP_\d{8}_\d{6}$", ""
 
         if (Test-Path $OriginalPath) {
-            Write-Msg "Cannot restore - original path already exists: $OriginalPath" "Error"
-            Write-Msg "Remove or rename the existing folder first, then retry." "Warning"
+            Write-SACMsg "Cannot restore - original path already exists: $OriginalPath" "Error"
+            Write-SACMsg "Remove or rename the existing folder first, then retry." "Warning"
             return
         }
 
         try {
             Rename-Item -Path $BackupPath -NewName $OriginalPath -ErrorAction Stop
-            Write-Msg "Restored: $BackupPath -> $OriginalPath" "Success"
+            Write-SACMsg "Restored: $BackupPath -> $OriginalPath" "Success"
         } catch {
-            Write-Msg "Restore failed: $($_.Exception.Message)" "Error"
+            Write-SACMsg "Restore failed: $($_.Exception.Message)" "Error"
         }
         return
     }
@@ -110,7 +105,7 @@
             Write-Host ""
             $resp = Read-Host "Type 'YES' to permanently delete all backups"
             if ($resp -ne "YES") {
-                Write-Msg "Purge aborted." "Warning"
+                Write-SACMsg "Purge aborted." "Warning"
                 return
             }
         }
@@ -118,9 +113,9 @@
         foreach ($backup in $AllBackups) {
             try {
                 Remove-Item $backup.FullName -Recurse -Force -ErrorAction Stop
-                Write-Msg "Purged backup: $($backup.FullName)" "Success"
+                Write-SACMsg "Purged backup: $($backup.FullName)" "Success"
             } catch {
-                Write-Msg "Failed to purge: $($backup.FullName) - $($_.Exception.Message)" "Error"
+                Write-SACMsg "Failed to purge: $($backup.FullName) - $($_.Exception.Message)" "Error"
             }
         }
         Write-Host "`n[*] Backup purge complete.`n" -ForegroundColor Green
