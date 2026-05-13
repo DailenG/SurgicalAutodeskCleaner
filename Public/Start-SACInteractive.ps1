@@ -16,14 +16,16 @@ function Start-SACInteractive {
         [switch]$ScanOnly
     )
 
-    # State for remote targeting
-    if ($null -eq $script:SACTarget) {
-        $script:SACTarget = [PSCustomObject]@{
-            ComputerName = "localhost"
-            Credential   = $null
-            IsRemote     = $false
-        }
+    # Always reset the target state on start to ensure a fresh session.
+    # This prevents the target from 'sticking' between TUI entries in the same shell session.
+    $script:SACTarget = [PSCustomObject]@{
+        ComputerName = "localhost"
+        Credential   = $null
+        IsRemote     = $false
     }
+    
+    # Reset last run status for the fresh session
+    $script:SACLastRunStatus = $null
 
     # Shared helpers (Test-SACRemoteSession and Invoke-SACPause) are imported from the Private folder.
 
@@ -87,17 +89,35 @@ function Start-SACInteractive {
         )
 
         $registryBlock = {
-            Get-ItemProperty -Path @(
-                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-            ) -ErrorAction SilentlyContinue |
-                Where-Object { $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk' } |
-                Where-Object { $_.DisplayName -match '\b20\d{2}\b' } |
-                Select-Object -ExpandProperty DisplayName -Unique
+            $regPaths = @(
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+            )
+            $results = @()
+            foreach ($path in $regPaths) {
+                if (Test-Path $path) {
+                    Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+                        $dn = $_.GetValue("DisplayName")
+                        $pb = $_.GetValue("Publisher")
+                        if (($null -ne $dn -and $dn -match 'Autodesk') -or ($null -ne $pb -and $pb -match 'Autodesk')) {
+                            if ($dn -match '\b20\d{2}\b') {
+                                $results += $dn
+                            }
+                        }
+                    }
+                }
+            }
+            return $results | Select-Object -Unique
         }
 
         $all = if ($script:SACTarget.IsRemote) {
-            Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $registryBlock -ErrorAction SilentlyContinue
+            $cmdParams = @{
+                ComputerName = $script:SACTarget.ComputerName
+                ScriptBlock  = $registryBlock
+                ErrorAction  = "SilentlyContinue"
+            }
+            if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+            Invoke-Command @cmdParams
         } else {
             & $registryBlock
         }
@@ -121,16 +141,41 @@ function Start-SACInteractive {
         Write-Host "`nScanning registry for installed Autodesk products..." -ForegroundColor Cyan
 
         $discoveryBlock = {
-            Get-ItemProperty -Path @(
-                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-            ) -ErrorAction SilentlyContinue | Where-Object {
-                $_.Publisher -match 'Autodesk' -or $_.DisplayName -match 'Autodesk'
+            $regPaths = @(
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+            )
+            $results = @()
+            foreach ($path in $regPaths) {
+                if (Test-Path $path) {
+                    Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+                        $dn = $_.GetValue("DisplayName")
+                        $pb = $_.GetValue("Publisher")
+                        if (($null -ne $dn -and $dn -match 'Autodesk') -or ($null -ne $pb -and $pb -match 'Autodesk')) {
+                            $results += [PSCustomObject]@{
+                                DisplayName          = $dn
+                                Publisher            = $pb
+                                UninstallString      = $_.GetValue("UninstallString")
+                                QuietUninstallString = $_.GetValue("QuietUninstallString")
+                                InstallLocation      = $_.GetValue("InstallLocation")
+                                PSChildName          = $_.PSChildName
+                                PSPath               = $_.PSPath
+                            }
+                        }
+                    }
+                }
             }
+            return $results
         }
 
         $UninstallKeys = if ($script:SACTarget.IsRemote) {
-            Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $discoveryBlock -ErrorAction SilentlyContinue
+            $cmdParams = @{
+                ComputerName = $script:SACTarget.ComputerName
+                ScriptBlock  = $discoveryBlock
+                ErrorAction  = "SilentlyContinue"
+            }
+            if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+            Invoke-Command @cmdParams
         } else {
             & $discoveryBlock
         }
@@ -235,7 +280,13 @@ function Start-SACInteractive {
             }
 
             $FoundProcesses = if ($script:SACTarget.IsRemote) {
-                Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $processDiscoveryBlock -ErrorAction SilentlyContinue
+                $cmdParams = @{
+                    ComputerName = $script:SACTarget.ComputerName
+                    ScriptBlock  = $processDiscoveryBlock
+                    ErrorAction  = "SilentlyContinue"
+                }
+                if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+                Invoke-Command @cmdParams
             } else {
                 & $processDiscoveryBlock
             }
@@ -270,7 +321,14 @@ function Start-SACInteractive {
             }
 
             $FoundDirs = if ($script:SACTarget.IsRemote) {
-                Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock $fsDiscoveryBlock -ArgumentList $SelectedProducts, $SelectedYears -ErrorAction SilentlyContinue
+                $cmdParams = @{
+                    ComputerName = $script:SACTarget.ComputerName
+                    ScriptBlock  = $fsDiscoveryBlock
+                    ArgumentList = @($SelectedProducts, $SelectedYears)
+                    ErrorAction  = "SilentlyContinue"
+                }
+                if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+                Invoke-Command @cmdParams
             } else {
                 & $fsDiscoveryBlock $SelectedProducts $SelectedYears
             }
@@ -355,7 +413,8 @@ $command
     # -------------------------------------------------------------------------
     # Main menu loop
     # -------------------------------------------------------------------------
-    $installedProducts = Get-InstalledAutodeskSummary
+    $needsRefresh = $true
+    $installedProducts = @()
 
     if ($ScanOnly) {
         Invoke-SurgicalCleanupFlow -ScanOnly $true
@@ -365,6 +424,22 @@ $command
     while ($true) {
         if (-not (Test-SACRemoteSession)) { Clear-Host }
         else { Write-Host "`n--- SAC Main Menu ---`n" -ForegroundColor Cyan }
+
+        if ($needsRefresh) {
+            $scanTarget = if ($script:SACTarget.IsRemote) { $script:SACTarget.ComputerName } else { "Local Machine" }
+            Write-Host "  Scanning ${scanTarget} for installed Autodesk products..." -ForegroundColor DarkGray
+            
+            try {
+                $installedProducts = Get-InstalledAutodeskSummary
+            } catch {
+                Write-Host "  [!] Discovery scan failed: $($_.Exception.Message)" -ForegroundColor Red
+                $installedProducts = @()
+            }
+            $needsRefresh = $false
+
+            # Re-clear after scan to show the clean menu
+            if (-not (Test-SACRemoteSession)) { Clear-Host }
+        }
 
         # Box-drawing characters generated at runtime via [char] casts.
         # Source file stays pure 7-bit ASCII - no BOM or encoding dependency.
@@ -446,12 +521,16 @@ $command
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
         Write-BoxLine -Text "  [6]  Build Cleanup Script   Build an SAC script to run later"
         Write-BoxLine -Text "  [7]  Restore User Profile   List/restore SAC backup folders"
+        Write-BoxLine -Text "  [8]  View All Products      List all detected Autodesk software"
         if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
             Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color $vColor
         }
         Write-Host $borderLine    -ForegroundColor DarkCyan
-        $targetStr = if ($script:SACTarget.IsRemote) { "$($script:SACTarget.ComputerName) ($($script:SACTarget.Credential.UserName))" } else { "Local Machine" }
+        $targetStr = if ($script:SACTarget.IsRemote) { 
+            if ($script:SACTarget.Credential.UserName) { "$($script:SACTarget.ComputerName) ($($script:SACTarget.Credential.UserName))" }
+            else { $script:SACTarget.ComputerName }
+        } else { "Local Machine" }
         Write-BoxLine -Text "  [T]  Target Remote Machine  Currently: $targetStr" -Color "Yellow"
         Write-BoxLine -Text "  [Q]  Quit"
         if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -468,6 +547,7 @@ $command
 
             "1" {
                 Invoke-SurgicalCleanupFlow -ScanOnly $false
+                $needsRefresh = $true
                 Invoke-SACPause
             }
 
@@ -483,6 +563,7 @@ $command
                     } else {
                         Start-SACPurge
                     }
+                    $needsRefresh = $true
                 } else {
                     Write-Host "  Master Purge cancelled." -ForegroundColor Yellow
                 }
@@ -504,6 +585,7 @@ $command
                 } else {
                     if ($delRoaming) { Reset-SACUserProfile -DeleteRoaming } else { Reset-SACUserProfile }
                 }
+                $needsRefresh = $true
                 Invoke-SACPause
             }
 
@@ -519,6 +601,7 @@ $command
                 } else {
                     if ($includeFlex) { Reset-SACLicensing -IncludeFlexNet } else { Reset-SACLicensing }
                 }
+                $needsRefresh = $true
                 Invoke-SACPause
             }
 
@@ -538,6 +621,19 @@ $command
                 $restoreChoice = Read-Host "  Restore a specific backup? Enter full path (or press Enter to return)"
                 if (-not [string]::IsNullOrWhiteSpace($restoreChoice)) {
                     Restore-SACUserProfile -Restore -BackupPath $restoreChoice.Trim()
+                    $needsRefresh = $true
+                }
+                Invoke-SACPause
+            }
+
+            "8" {
+                Write-Host "`n  Detected Autodesk Products on ${targetStr}:" -ForegroundColor Cyan
+                if ($installedProducts.Count -eq 0) {
+                    Write-Host "  No versioned Autodesk products detected." -ForegroundColor Yellow
+                } else {
+                    foreach ($p in $installedProducts) {
+                        Write-Host "  - $p"
+                    }
                 }
                 Invoke-SACPause
             }
@@ -554,22 +650,31 @@ $command
 
             "T" {
                 $comp = Read-Host "`n  Enter remote computer name (or 'local' to reset)"
-                if ($comp.Trim().ToLower() -eq "local" -or [string]::IsNullOrWhiteSpace($comp)) {
+                if ([string]::IsNullOrWhiteSpace($comp) -or $comp.Trim().ToLower() -eq "local") {
                     $script:SACTarget = [PSCustomObject]@{ ComputerName = "localhost"; Credential = $null; IsRemote = $false }
-                    Write-Host "  Target reset to local machine." -ForegroundColor Green
+                    $needsRefresh = $true
+                    Write-Host "  Target successfully reset to LOCAL MACHINE." -ForegroundColor Green
+                    Start-Sleep -Seconds 1
                 } else {
                     $res = Connect-SACTarget -ComputerName $comp.Trim()
                     if ($res.Connected) {
+                        # We consider it remote if it's NOT explicitly "localhost"
                         $script:SACTarget = [PSCustomObject]@{ 
                             ComputerName = $res.ComputerName; 
                             Credential = $res.Credential; 
                             IsRemote = ($res.ComputerName -ne "localhost") 
                         }
-                        # Re-scan installed products for the new target
-                        $installedProducts = Get-InstalledAutodeskSummary
+                        $needsRefresh = $true
+                        Write-Host "  Target successfully set to REMOTE: $($res.ComputerName)." -ForegroundColor Green
+                        Start-Sleep -Seconds 1
+                    } else {
+                        # Recalculate target display string for the error message to avoid stale data
+                        $currentSetting = if ($script:SACTarget.IsRemote) { $script:SACTarget.ComputerName } else { "Local Machine" }
+                        Write-Host "`n  [!] FAILED to connect to $($comp.Trim())." -ForegroundColor Red
+                        Write-Host "      Target remains set to: $currentSetting" -ForegroundColor Yellow
+                        Invoke-SACPause
                     }
                 }
-                Start-Sleep -Seconds 1
             }
 
             "Q" {
