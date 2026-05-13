@@ -663,7 +663,7 @@ $command
             }
 
             "T" {
-                $comp = Read-Host "`n  Enter remote computer name (or 'local' to reset)"
+                $comp = Read-Host "`n  Enter remote computer name (or leave blank to reset)"
                 if ([string]::IsNullOrWhiteSpace($comp) -or $comp.Trim().ToLower() -eq "local") {
                     $script:SACTarget = [PSCustomObject]@{ ComputerName = "localhost"; Credential = $null; IsRemote = $false }
                     $needsRefresh = $true
