@@ -64,36 +64,10 @@ function Start-SACPurge {
 
     Start-Transcript -Path $TranscriptLog -Append -Force | Out-Null
 
-    # --- Helper Functions ---
-    function Write-Msg {
-        param (
-            [string]$Message,
-            [ValidateSet("Info", "Success", "Warning", "Error")]
-            [string]$Type = "Info"
-        )
-        $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
-        $Colors = @{
-            "Info"    = "Cyan"
-            "Success" = "Green"
-            "Warning" = "Yellow"
-            "Error"   = "Red"
-        }
-        Write-Host "$($TimeStamp) $($Message)" -ForegroundColor $Colors[$Type]
-    }
-
-    function Write-QuietLog {
-        param ([string]$Message)
-        $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
-        # Writing to a separate debug file to prevent IO locks with Start-Transcript
-        Add-Content -Path $DebugLog -Value "$($TimeStamp) [DEBUG] $($Message)"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
-    }
+    # --- Helper Functions (Centralized) ---
 
     function Invoke-DesktopCleanup {
-        Write-Msg "Sweeping desktops for Autodesk shortcuts..." "Info"
+        Write-SACMsg "Sweeping desktops for Autodesk shortcuts..." "Info"
         $DesktopPaths = @("$($env:PUBLIC)\Desktop", "C:\Users\*\Desktop", "C:\Users\*\OneDrive\Desktop")
         $ShortcutPatterns = @("*AutoCAD*.lnk", "*Revit*.lnk", "*Autodesk*.lnk", "*Civil 3D*.lnk", "*BIM*.lnk", "*Recap*.lnk")
 
@@ -102,10 +76,10 @@ function Start-SACPurge {
                 Get-ChildItem -Path $path -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
                     try {
                         Remove-Item $_.FullName -Force -ErrorAction Stop
-                        Write-Msg "Deleted shortcut: $($_.FullName)" "Success"
+                        Write-SACMsg "Deleted shortcut: $($_.FullName)" "Success"
                     }
                     catch {
-                        Write-QuietLog "Failed to delete shortcut $($_.FullName): $($_.Exception.Message)"
+                        Write-SACQuietLog "Failed to delete shortcut $($_.FullName): $($_.Exception.Message)"
                     }
                 }
             }
@@ -118,22 +92,22 @@ function Start-SACPurge {
         $ServiceCim = Get-CimInstance Win32_Service -Filter "Name LIKE '%$($ServiceName)%' OR DisplayName LIKE '%$($ServiceName)%'"
         foreach ($svc in $ServiceCim) {
             if ($svc.State -eq 'Running' -and $svc.ProcessId -gt 0) {
-                Write-Msg "Hard killing process ID $($svc.ProcessId) for service $($svc.Name)" "Warning"
-                try { Stop-Process -Id $svc.ProcessId -Force -ErrorAction Stop } catch { Write-QuietLog "Failed to kill PID $($svc.ProcessId): $($_.Exception.Message)" }
+                Write-SACMsg "Hard killing process ID $($svc.ProcessId) for service $($svc.Name)" "Warning"
+                try { Stop-Process -Id $svc.ProcessId -Force -ErrorAction Stop } catch { Write-SACQuietLog "Failed to kill PID $($svc.ProcessId): $($_.Exception.Message)" }
             }
             try {
                 Set-Service -Name $svc.Name -StartupType Disabled -ErrorAction Stop
                 sc.exe delete $svc.Name 2>&1 | Out-Null
-                Write-Msg "Removed service: $($svc.Name)" "Success"
+                Write-SACMsg "Removed service: $($svc.Name)" "Success"
             }
             catch {
-                Write-QuietLog "Failed to disable/remove service $($svc.Name): $($_.Exception.Message)"
+                Write-SACQuietLog "Failed to disable/remove service $($svc.Name): $($_.Exception.Message)"
             }
         }
     }
 
     function Invoke-RemoveODISAndLicensing {
-        Write-Msg "Targeting modern Autodesk ODIS and Licensing components..." "Info"
+        Write-SACMsg "Targeting modern Autodesk ODIS and Licensing components..." "Info"
         $UninstallerPaths = @(
             "$($env:ProgramFiles)\Autodesk\AdODIS\V1\RemoveODIS.exe",
             "$(${env:CommonProgramFiles(x86)})\Autodesk Shared\AdskLicensing\uninstall.exe",
@@ -142,20 +116,20 @@ function Start-SACPurge {
 
         foreach ($path in $UninstallerPaths) {
             if (Test-Path $path) {
-                Write-Msg "Executing native uninstaller: $($path)" "Info"
+                Write-SACMsg "Executing native uninstaller: $($path)" "Info"
                 try {
                     $Process = Start-Process -FilePath $path -ArgumentList "--mode unattended" -PassThru -Wait -NoNewWindow -ErrorAction Stop
-                    Write-Msg "Uninstaller exited with code: $($Process.ExitCode)" "Info"
+                    Write-SACMsg "Uninstaller exited with code: $($Process.ExitCode)" "Info"
                 }
                 catch {
-                    Write-QuietLog "Failed to execute uninstaller $($path): $($_.Exception.Message)"
+                    Write-SACQuietLog "Failed to execute uninstaller $($path): $($_.Exception.Message)"
                 }
             }
         }
     }
 
     function Invoke-RemoveSQLLocalDB {
-        Write-Msg "Evaluating SQL Server LocalDB dependencies..." "Info"
+        Write-SACMsg "Evaluating SQL Server LocalDB dependencies..." "Info"
         $AutodeskPatterns = @("*SteelConnections*", "*AdvanceSteel*", "*Revit*", "*AutoCAD*", "MSSQLLocalDB", "v11.0")
     
         $instances = try { & sqllocaldb info 2>$null } catch { $null }
@@ -171,23 +145,23 @@ function Start-SACPurge {
             }
 
             if ($unknownInstances.Count -gt 0) {
-                Write-Msg "Found unknown LocalDB instances. Skipping SQL removal to prevent breaking other apps." "Warning"
-                foreach ($inst in $unknownInstances) { Write-QuietLog "Skipping due to unknown instance: $inst" }
+                Write-SACMsg "Found unknown LocalDB instances. Skipping SQL removal to prevent breaking other apps." "Warning"
+                foreach ($inst in $unknownInstances) { Write-SACQuietLog "Skipping due to unknown instance: $inst" }
                 return
             }
 
-            Write-Msg "Only Autodesk/Default LocalDB instances detected. Proceeding with SQL purge..." "Success"
+            Write-SACMsg "Only Autodesk/Default LocalDB instances detected. Proceeding with SQL purge..." "Success"
             foreach ($inst in $instances) {
-                Write-QuietLog "Stopping and deleting instance: $inst"
+                Write-SACQuietLog "Stopping and deleting instance: $inst"
                 & sqllocaldb stop "$inst" 2>&1 | Out-Null
                 & sqllocaldb delete "$inst" 2>&1 | Out-Null
             }
         }
         else {
-            Write-Msg "No active LocalDB instances found." "Info"
+            Write-SACMsg "No active LocalDB instances found." "Info"
         }
 
-        Write-Msg "Locating SQL Server LocalDB MSIs..." "Info"
+        Write-SACMsg "Locating SQL Server LocalDB MSIs..." "Info"
         $LocalDbRegex = "^Microsoft SQL Server (2014|2019).*LocalDB"
         $regPaths = @(
             "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
@@ -201,26 +175,26 @@ function Start-SACPurge {
             foreach ($app in $appsToUninstall) {
                 $guid = $app.PSChildName
                 $name = $app.DisplayName
-                Write-Msg "Uninstalling: $name" "Info"
+                Write-SACMsg "Uninstalling: $name" "Info"
                 $MsiLogFile = "$($LogDir)\$($name -replace '[\\/:\*\?"<>\|]','')_Uninstall.log"
             
                 $process = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $guid /qn /norestart REBOOT=ReallySuppress /L*v `"$($MsiLogFile)`"" -Wait -NoNewWindow -PassThru
             
                 if ($process.ExitCode -eq 0) {
-                    Write-Msg "Successfully uninstalled $name." "Success"
+                    Write-SACMsg "Successfully uninstalled $name." "Success"
                 }
                 else {
-                    Write-Msg "Uninstall for $name returned exit code $($process.ExitCode)." "Warning"
+                    Write-SACMsg "Uninstall for $name returned exit code $($process.ExitCode)." "Warning"
                 }
             }
         }
         else {
-            Write-QuietLog "Target SQL LocalDB installations not found in the registry."
+            Write-SACQuietLog "Target SQL LocalDB installations not found in the registry."
         }
 
         $localDbAppData = "$env:LOCALAPPDATA\Microsoft\Microsoft SQL Server Local DB"
         if (Test-Path $localDbAppData) {
-            Write-QuietLog "Purging residual LocalDB AppData..."
+            Write-SACQuietLog "Purging residual LocalDB AppData..."
             Remove-Item -Path $localDbAppData -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
@@ -232,14 +206,14 @@ function Start-SACPurge {
             # Kill running processes before we start uninstallation
             foreach ($processName in $ProcessesToKill) {
                 try { Get-Process -Name $processName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop } 
-                catch { Write-QuietLog "Could not stop process $($processName): $($_.Exception.Message)" }
+                catch { Write-SACQuietLog "Could not stop process $($processName): $($_.Exception.Message)" }
             }
 
             # Disable Autodesk Scheduled Tasks FIRST to prevent processes from restarting
             Get-ScheduledTask -TaskPath "\Autodesk\*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
             Get-ScheduledTask -TaskName "*Autodesk*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
 
-            Write-Msg "Starting uninstallation sequence for $($ProductName) $($version)..." "Info"
+            Write-SACMsg "Starting uninstallation sequence for $($ProductName) $($version)..." "Info"
 
             Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -Force -ErrorAction SilentlyContinue
 
@@ -289,16 +263,16 @@ function Start-SACPurge {
                 $UninstallString = if (-not [string]::IsNullOrWhiteSpace($QuietUninstallString)) { $QuietUninstallString } else { $app.UninstallString }
                 $MsiLogFile = "$($LogDir)\$($DisplayName -replace '[\\/:\*\?"<>\|]','')_Uninstall.log"
                 
-                Write-Msg "Uninstalling: $DisplayName" "Warning"
+                Write-SACMsg "Uninstalling: $DisplayName" "Warning"
                 
                 $Process = $null
                 if ($ProductCode -match '^{.*}$') {
                     if ($UninstallString -match '^MsiExec\.exe') {
-                        Write-Msg "  [MSI] $DisplayName" "Info"
+                        Write-SACMsg "  [MSI] $DisplayName" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
                     }
                     else {
-                        Write-Msg "  [Custom] $DisplayName" "Info"
+                        Write-SACMsg "  [Custom] $DisplayName" "Info"
                         $Process = Invoke-SACCustomUninstall -App $app -UninstallString $UninstallString -DisplayName $DisplayName
                     }
                 }
@@ -308,7 +282,7 @@ function Start-SACPurge {
                 
                 if ($null -ne $Process) {
                     Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5 -TailLogFile $MsiLogFile
-                    Write-Msg "  Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
+                    Write-SACMsg "  Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
                     if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
                         $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
                     }
@@ -318,22 +292,22 @@ function Start-SACPurge {
                 if (Test-Path $app.PsPath) {
                     try {
                         Remove-Item $app.PsPath -Recurse -Force -ErrorAction Stop
-                        Write-Msg "  Evicted Add/Remove Programs Key: $($DisplayName)" "Success"
+                        Write-SACMsg "  Evicted Add/Remove Programs Key: $($DisplayName)" "Success"
                     }
                     catch {
-                        Write-QuietLog "Failed to evict registry key for $($DisplayName) ($($app.PsPath)): $($_.Exception.Message)"
+                        Write-SACQuietLog "Failed to evict registry key for $($DisplayName) ($($app.PsPath)): $($_.Exception.Message)"
                         $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
                     }
                 } else {
-                    Write-Msg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
-                    Write-QuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
+                    Write-SACMsg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
+                    Write-SACQuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
                 }
             }
 
             function Invoke-SACCustomUninstall {
                 param ([object]$App, [string]$UninstallString, [string]$DisplayName)
                 if ([string]::IsNullOrWhiteSpace($UninstallString)) {
-                    Write-QuietLog "No UninstallString found for $($DisplayName). Skipping."
+                    Write-SACQuietLog "No UninstallString found for $($DisplayName). Skipping."
                     return $null
                 }
 
@@ -353,7 +327,7 @@ function Start-SACPurge {
                 }
 
                 if ([string]::IsNullOrWhiteSpace($ExePath)) {
-                    Write-QuietLog "Could not parse executable path from UninstallString for $($DisplayName). Skipping."
+                    Write-SACQuietLog "Could not parse executable path from UninstallString for $($DisplayName). Skipping."
                     return $null
                 }
 
@@ -363,8 +337,8 @@ function Start-SACPurge {
                     return Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                 }
                 catch {
-                    Write-QuietLog "Failed to execute custom uninstaller for $($DisplayName): $($_.Exception.Message)"
-                    Write-Msg "  Execution failed for $($DisplayName) (See Debug Log)" "Error"
+                    Write-SACQuietLog "Failed to execute custom uninstaller for $($DisplayName): $($_.Exception.Message)"
+                    Write-SACMsg "  Execution failed for $($DisplayName) (See Debug Log)" "Error"
                     $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Execution: $DisplayName"; Reason = $_.Exception.Message }
                     return $null
                 }
@@ -383,7 +357,7 @@ function Start-SACPurge {
 
             $total = $Classified.Count
             $skippable = $Tier2.Count + $Tier3.Count
-            Write-Msg "Found $total component(s) for Purge: $($Tier1.Count) primary, $skippable update/addon(s), $($Tier4.Count) shared." "Info"
+            Write-SACMsg "Found $total component(s) for Purge: $($Tier1.Count) primary, $skippable update/addon(s), $($Tier4.Count) shared." "Info"
 
             # --- Tier 1: Primary products (full uninstall) ---
             $tier1Succeeded = New-Object 'System.Collections.Generic.HashSet[string]'
@@ -397,17 +371,17 @@ function Start-SACPurge {
             foreach ($item in $Tier2) {
                 $dn = $item.App.DisplayName
                 if ($tier1Succeeded.Count -gt 0) {
-                    Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                    Write-SACMsg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
                     if (Test-Path $item.App.PSPath) {
                         try {
                             Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
-                            Write-Msg "  Evicted: $dn" "Success"
+                            Write-SACMsg "  Evicted: $dn" "Success"
                         } catch {
-                            Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                            Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
                         }
                     }
                 } else {
-                    Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                    Write-SACMsg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                     Invoke-SACUninstallEntry -app $item.App
                 }
             }
@@ -416,17 +390,17 @@ function Start-SACPurge {
             foreach ($item in $Tier3) {
                 $dn = $item.App.DisplayName
                 if ($tier1Succeeded.Count -gt 0) {
-                    Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                    Write-SACMsg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
                     if (Test-Path $item.App.PSPath) {
                         try {
                             Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
-                            Write-Msg "  Evicted: $dn" "Success"
+                            Write-SACMsg "  Evicted: $dn" "Success"
                         } catch {
-                            Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                            Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
                         }
                     }
                 } else {
-                    Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                    Write-SACMsg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                     Invoke-SACUninstallEntry -app $item.App
                 }
             }
@@ -440,23 +414,23 @@ function Start-SACPurge {
 
     # --- Execution Block ---
     Clear-Host
-    Write-Msg "==========================================" "Info"
-    Write-Msg " AUTODESK MASTER PURGE INITIALIZED" "Info"
-    Write-Msg " Transcript: $($TranscriptLog)" "Info"
-    Write-Msg " Debug Log:  $($DebugLog)" "Info"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " AUTODESK MASTER PURGE INITIALIZED" "Info"
+    Write-SACMsg " Transcript: $($TranscriptLog)" "Info"
+    Write-SACMsg " Debug Log:  $($DebugLog)" "Info"
+    Write-SACMsg "==========================================" "Info"
 
-    if (Test-Interactive) {
+    if (Test-SACInteractive -Silent $Silent) {
         Write-Host "`nWARNING: This will forcefully terminate and remove all Autodesk applications.`n" -ForegroundColor Yellow
         $Response = Read-Host "Type 'YES' to proceed"
         if ($Response -ne "YES") { 
-            Write-Msg "Execution aborted by user." "Warning"
+            Write-SACMsg "Execution aborted by user." "Warning"
             Stop-Transcript | Out-Null
             exit 
         }
     }
     else {
-        Write-Msg "Running in non-interactive/silent mode." "Info"
+        Write-SACMsg "Running in non-interactive/silent mode." "Info"
     }
 
     foreach ($product in $RemoveVersions) {
@@ -464,7 +438,7 @@ function Start-SACPurge {
     }
 
     # --- Phase 2: Service and System Component Removal ---
-    Write-Msg "All product uninstallers completed. Proceeding to service removal..." "Info"
+    Write-SACMsg "All product uninstallers completed. Proceeding to service removal..." "Info"
     Stop-AndRemoveService -ServiceName "Autodesk"
     Stop-AndRemoveService -ServiceName "Adsk"
     Stop-AndRemoveService -ServiceName "ODIS"
@@ -472,7 +446,7 @@ function Start-SACPurge {
     Invoke-RemoveODISAndLicensing
     Invoke-RemoveSQLLocalDB
 
-    Write-Msg "Purging Installer Cache..." "Info"
+    Write-SACMsg "Purging Installer Cache..." "Info"
     $InstallerCache = Get-ItemProperty -Path "HKLM:\SOFTWARE\Classes\Installer\Products\*" -ErrorAction SilentlyContinue | 
     Where-Object { $_.ProductName -Like "*Autodesk*" }
     foreach ($cache in $InstallerCache) {
@@ -480,11 +454,11 @@ function Start-SACPurge {
             Remove-Item $cache.PSPath -Recurse -Force -ErrorAction Stop
         }
         catch {
-            Write-QuietLog "Failed to purge installer cache key $($cache.PSPath): $($_.Exception.Message)"
+            Write-SACQuietLog "Failed to purge installer cache key $($cache.PSPath): $($_.Exception.Message)"
         }
     }
 
-    Write-Msg "Wiping Registry Hive..." "Info"
+    Write-SACMsg "Wiping Registry Hive..." "Info"
     New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS\ -ErrorAction SilentlyContinue | Out-Null
 
     foreach ($location in $RegistryLocations) {
@@ -498,19 +472,19 @@ function Start-SACPurge {
                 $regArgs = "delete `"$nativeRegPath`" /f"
                 $regProc = Start-Process -FilePath "reg.exe" -ArgumentList $regArgs -Wait -NoNewWindow -PassThru
                 if ($regProc.ExitCode -eq 0) {
-                    Write-Msg "Removed registry tree: $nativeRegPath" "Success"
+                    Write-SACMsg "Removed registry tree: $nativeRegPath" "Success"
                 }
                 else {
-                    Write-QuietLog "reg.exe failed to remove $nativeRegPath. Exit code: $($regProc.ExitCode)"
+                    Write-SACQuietLog "reg.exe failed to remove $nativeRegPath. Exit code: $($regProc.ExitCode)"
                 }
             }
             catch {
-                Write-QuietLog "Failed to execute reg delete for $($nativeRegPath): $($_.Exception.Message)"        
+                Write-SACQuietLog "Failed to execute reg delete for $($nativeRegPath): $($_.Exception.Message)"        
             }
         }
     }
 
-    Write-Msg "Wiping File System..." "Info"
+    Write-SACMsg "Wiping File System..." "Info"
     Start-Sleep -Seconds 3
     foreach ($location in $DataLocations) {
         # Separate wildcard paths (need Get-Item expansion) from literal paths.
@@ -528,7 +502,7 @@ function Start-SACPurge {
             $purgeResult = Invoke-SACRobocopyPurge -TargetPath $fp
 
             if (-not $purgeResult.Success) {
-                Write-QuietLog "Failed to fully remove directory $fp (files likely locked)."
+                Write-SACQuietLog "Failed to fully remove directory $fp (files likely locked)."
 
                 $failReason = "Files are locked/in-use."
                 if ($purgeResult.LockedItems.Count -gt 0) {
@@ -537,7 +511,7 @@ function Start-SACPurge {
 
                 $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
             } else {
-                Write-Msg "Purged directory: $fp" "Success"
+                Write-SACMsg "Purged directory: $fp" "Success"
             }
         }
     }
@@ -546,9 +520,9 @@ function Start-SACPurge {
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
-    Write-Msg "==========================================" "Info"
-    Write-Msg " PURGE COMPLETED in $($ElapsedTime)" "Success"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " PURGE COMPLETED in $($ElapsedTime)" "Success"
+    Write-SACMsg "==========================================" "Info"
 
     if ($script:SACFailures.Count -gt 0) {
         Write-Host "`n[!] CRITICAL COMPONENT FAILURES DETECTED:" -ForegroundColor Red
