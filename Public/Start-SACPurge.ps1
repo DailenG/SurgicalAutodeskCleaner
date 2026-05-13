@@ -261,78 +261,179 @@ function Start-SACPurge {
                 return ($_.Publisher -match $vendorPattern -or $_.DisplayName -match $vendorPattern)
             }
 
-            foreach ($app in $UninstallKeys) {
+            $Tier2Pattern = 'Service Pack|\bSP\d\b|Hotfix|Patch|Update \d|Security Update'
+            $Tier3Pattern = 'Language Pack|Object Enabler|Add-[Ii]n|Plugin|Extension|' +
+                            'Content Library|Content Core|Content Essential|Content Basic|' +
+                            'Material Library Base|Material Library Low|Material Library Medium|Material Library High|' +
+                            'Sample|Template|Documentation|DWG TrueView|' +
+                            'Colorbooks|Color Books|Unit Schemas|MEP Content|MEP Metric|MEP Imperial|' +
+                            'Revit Content|Batch Print|eTransmit|Worksharing Monitor|DB Link|Model Review|' +
+                            'BIM Interoperability|Cloud Models|Issues Addon|Robot Structural Analysis Extension|' +
+                            'OpenStudio CLI'
+            $Tier4Pattern = 'Shared Component|Collaboration for Revit|Desktop Connector|Desktop App|Single Sign|Autodesk Access|Autodesk Identity|Genuine Service'
+
+            function Get-SACTier {
+                param ([string]$DisplayName)
+                if ($DisplayName -match $Tier2Pattern) { return 2 }
+                if ($DisplayName -match $Tier3Pattern) { return 3 }
+                if ($DisplayName -match $Tier4Pattern) { return 4 }
+                return 1
+            }
+
+            function Invoke-SACUninstallEntry {
+                param ([object]$app)
+                
                 $ProductCode = $app.PSChildName
                 $DisplayName = $app.DisplayName
-                $UninstallString = if (-not [string]::IsNullOrWhiteSpace($app.QuietUninstallString)) { $app.QuietUninstallString } else { $app.UninstallString }
+                $QuietUninstallString = $app.QuietUninstallString
+                $UninstallString = if (-not [string]::IsNullOrWhiteSpace($QuietUninstallString)) { $QuietUninstallString } else { $app.UninstallString }
                 $MsiLogFile = "$($LogDir)\$($DisplayName -replace '[\\/:\*\?"<>\|]','')_Uninstall.log"
-            
+                
+                Write-Msg "Uninstalling: $DisplayName" "Warning"
+                
+                $Process = $null
                 if ($ProductCode -match '^{.*}$') {
                     if ($UninstallString -match '^MsiExec\.exe') {
-                        Write-Msg "MSI Executing: $($DisplayName)" "Info"
+                        Write-Msg "  [MSI] $DisplayName" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
-                    
-                        Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
-                        Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
-                        if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
-                            $script:SACFailures += [PSCustomObject]@{ Component = "MSI Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
-                        }
                     }
                     else {
-                        Write-Msg "Custom Executing: $($DisplayName)" "Info"
-                    
-                        if ([string]::IsNullOrWhiteSpace($UninstallString)) {
-                            Write-QuietLog "No UninstallString found for $($DisplayName). Skipping."
-                            continue
-                        }
-
-                        $ExePath = ""
-                        $Arguments = ""
-                    
-                        if ($UninstallString -match '^"([^"]+)"(.*)$') {
-                            $ExePath = $matches[1]
-                            $Arguments = $matches[2].Trim()
-                        }
-                        elseif ($UninstallString -match '^(.*\.exe)(.*)$') {
-                            $ExePath = $matches[1].Trim()
-                            $Arguments = $matches[2].Trim()
-                        }
-                        else {
-                            $ExePath = $UninstallString
-                        }
-
-                        if ([string]::IsNullOrWhiteSpace($ExePath)) {
-                            Write-QuietLog "Could not parse executable path from UninstallString for $($DisplayName). Skipping."
-                            continue
-                        }
-
-                        $FullArgs = "$($Arguments) /qn /quiet /norestart --mode unattended".Trim()
-                    
-                        try {
-                            $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
-                        
-                            Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
-                            Write-Msg "Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
-                            if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
-                                $script:SACFailures += [PSCustomObject]@{ Component = "Custom Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
-                            }
-                        }
-                        catch {
-                            Write-QuietLog "Failed to execute custom uninstaller for $($DisplayName): $($_.Exception.Message)"
-                            Write-Msg "Execution failed for $($DisplayName) (See Debug Log)" "Error"
-                            $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Execution: $DisplayName"; Reason = $_.Exception.Message }
-                        }
+                        Write-Msg "  [Custom] $DisplayName" "Info"
+                        $Process = Invoke-SACCustomUninstall -App $app -UninstallString $UninstallString -DisplayName $DisplayName
                     }
                 }
+                else {
+                    $Process = Invoke-SACCustomUninstall -App $app -UninstallString $UninstallString -DisplayName $DisplayName
+                }
+                
+                if ($null -ne $Process) {
+                    Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
+                    Write-Msg "  Exit code: $($Process.ExitCode) for $($DisplayName)" "Info"
+                    if ($Process.ExitCode -ne 0 -and $Process.ExitCode -ne 3010 -and $Process.ExitCode -ne 1605) {
+                        $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
+                    }
+                }
+                
+                # Evict the registry key
+                if (Test-Path $app.PsPath) {
+                    try {
+                        Remove-Item $app.PsPath -Recurse -Force -ErrorAction Stop
+                        Write-Msg "  Evicted Add/Remove Programs Key: $($DisplayName)" "Success"
+                    }
+                    catch {
+                        Write-QuietLog "Failed to evict registry key for $($DisplayName) ($($app.PsPath)): $($_.Exception.Message)"
+                        $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
+                    }
+                } else {
+                    Write-Msg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
+                    Write-QuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
+                }
+            }
+
+            function Invoke-SACCustomUninstall {
+                param ([object]$App, [string]$UninstallString, [string]$DisplayName)
+                if ([string]::IsNullOrWhiteSpace($UninstallString)) {
+                    Write-QuietLog "No UninstallString found for $($DisplayName). Skipping."
+                    return $null
+                }
+
+                $ExePath = ""
+                $Arguments = ""
+            
+                if ($UninstallString -match '^"([^"]+)"(.*)$') {
+                    $ExePath = $matches[1]
+                    $Arguments = $matches[2].Trim()
+                }
+                elseif ($UninstallString -match '^(.*\.exe)(.*)$') {
+                    $ExePath = $matches[1].Trim()
+                    $Arguments = $matches[2].Trim()
+                }
+                else {
+                    $ExePath = $UninstallString
+                }
+
+                if ([string]::IsNullOrWhiteSpace($ExePath)) {
+                    Write-QuietLog "Could not parse executable path from UninstallString for $($DisplayName). Skipping."
+                    return $null
+                }
+
+                $FullArgs = "$($Arguments) -q --silent /qn /quiet /norestart --mode unattended".Trim()
             
                 try {
-                    Remove-Item $app.PsPath -Recurse -Force -ErrorAction Stop
-                    Write-Msg "Evicted Add/Remove Programs Key: $($DisplayName)" "Success"
+                    return Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                 }
                 catch {
-                    Write-QuietLog "Failed to evict registry key for $($DisplayName) ($($app.PsPath)): $($_.Exception.Message)"
-                    $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
+                    Write-QuietLog "Failed to execute custom uninstaller for $($DisplayName): $($_.Exception.Message)"
+                    Write-Msg "  Execution failed for $($DisplayName) (See Debug Log)" "Error"
+                    $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Execution: $DisplayName"; Reason = $_.Exception.Message }
+                    return $null
                 }
+            }
+
+            $Classified = @()
+            foreach ($app in $UninstallKeys) {
+                $tier = Get-SACTier -DisplayName $app.DisplayName
+                $Classified += [PSCustomObject]@{ Tier = $tier; App = $app }
+            }
+
+            $Tier1 = $Classified | Where-Object { $_.Tier -eq 1 }
+            $Tier2 = $Classified | Where-Object { $_.Tier -eq 2 }
+            $Tier3 = $Classified | Where-Object { $_.Tier -eq 3 }
+            $Tier4 = $Classified | Where-Object { $_.Tier -eq 4 }
+
+            $total = $Classified.Count
+            $skippable = $Tier2.Count + $Tier3.Count
+            Write-Msg "Found $total component(s) for Purge: $($Tier1.Count) primary, $skippable update/addon(s), $($Tier4.Count) shared." "Info"
+
+            # --- Tier 1: Primary products (full uninstall) ---
+            $tier1Succeeded = New-Object 'System.Collections.Generic.HashSet[string]'
+            foreach ($item in $Tier1) {
+                Invoke-SACUninstallEntry -app $item.App
+                $baseName = $item.App.DisplayName -replace $Tier2Pattern,'' -replace $Tier3Pattern,'' -replace $Tier4Pattern,'' -replace '\s+', ' '
+                $tier1Succeeded.Add($baseName.Trim()) | Out-Null
+            }
+
+            # --- Tier 2: Service packs / updates ---
+            foreach ($item in $Tier2) {
+                $dn = $item.App.DisplayName
+                if ($tier1Succeeded.Count -gt 0) {
+                    Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                    if (Test-Path $item.App.PSPath) {
+                        try {
+                            Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
+                            Write-Msg "  Evicted: $dn" "Success"
+                        } catch {
+                            Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                        }
+                    }
+                } else {
+                    Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                    Invoke-SACUninstallEntry -app $item.App
+                }
+            }
+
+            # --- Tier 3: Add-ons / extensions ---
+            foreach ($item in $Tier3) {
+                $dn = $item.App.DisplayName
+                if ($tier1Succeeded.Count -gt 0) {
+                    Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                    if (Test-Path $item.App.PSPath) {
+                        try {
+                            Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
+                            Write-Msg "  Evicted: $dn" "Success"
+                        } catch {
+                            Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                        }
+                    }
+                } else {
+                    Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                    Invoke-SACUninstallEntry -app $item.App
+                }
+            }
+
+            # --- Tier 4: Shared components (always full uninstall, last) ---
+            foreach ($item in $Tier4) {
+                Invoke-SACUninstallEntry -app $item.App
             }
         }
     }

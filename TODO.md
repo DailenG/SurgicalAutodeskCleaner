@@ -10,3 +10,6 @@
     - Explore using `ForEach-Object -Parallel` for independent file system and registry wiping once all uninstallers have finished.
 - [ ] **Enhanced Logging**
     - Real-time log tailing within the supervisor loop to surface uninstaller errors directly to the main console.
+- [ ] **Remote Task Firing Architecture**
+    - Implement a mechanism to dispatch `Start-SAC` scripts to remote endpoints via `Invoke-Command -AsJob`.
+    - Enhance `Watch-SACProcessTree` to use `Get-CimInstance -ComputerName` for remote, disconnected process tree monitoring that is resilient to VPN/network drops.

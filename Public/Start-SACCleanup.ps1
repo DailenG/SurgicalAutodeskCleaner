@@ -228,23 +228,35 @@ function Start-SACCleanup {
 
         $ProductCode    = $App.PSChildName
         $DisplayName    = $App.DisplayName
-        $UninstallString = $App.UninstallString
+        $QuietUninstallString = $App.QuietUninstallString
+        $UninstallString = if (-not [string]::IsNullOrWhiteSpace($QuietUninstallString)) { $QuietUninstallString } else { $App.UninstallString }
         $MsiLogFile     = "$LogDir\$($DisplayName -replace '[\\/:*?"<>|]', '')_Uninstall.log"
 
         Write-Msg "Uninstalling: $DisplayName" "Warning"
 
+        $Process = $null
         if ($ProductCode -match '^{.*}$') {
             if ($UninstallString -match '^MsiExec\.exe') {
                 Write-Msg "  [MSI] $DisplayName" "Info"
                 $Process = Start-Process "msiexec.exe" -ArgumentList "/x $ProductCode /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$MsiLogFile`"" -PassThru -WindowStyle Hidden
-                Invoke-SACWaitOnProcess -Process $Process -Label $DisplayName
             } else {
                 Write-Msg "  [Custom] $DisplayName" "Info"
-                Invoke-SACCustomUninstall -App $App
+                $Process = Invoke-SACCustomUninstall -App $App -UninstallString $UninstallString
             }
         } else {
             # Non-GUID entry - attempt custom uninstall path
-            Invoke-SACCustomUninstall -App $App
+            $Process = Invoke-SACCustomUninstall -App $App -UninstallString $UninstallString
+        }
+
+        if ($null -ne $Process) {
+            Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
+            Write-Msg "  Exit code $($Process.ExitCode): $DisplayName" "Info"
+            $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
+            if ($Process.ExitCode -notin $safeExitCodes) {
+                $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
+            } else {
+                Write-QuietLog "  Safe exit code $($Process.ExitCode) for: $DisplayName"
+            }
         }
 
         # Evict the registry key. If it is already gone the uninstaller
@@ -263,44 +275,12 @@ function Start-SACCleanup {
         }
     }
 
-    function Invoke-SACWaitOnProcess {
-        param ([System.Diagnostics.Process]$Process, [string]$Label)
-        $LastCpu   = $null
-        $IdleSince = $null
-        while (-not $Process.HasExited) {
-            Start-Sleep -Seconds 10
-            try {
-                $cpu = (Get-Process -Id $Process.Id -ErrorAction Stop).CPU
-                if ($null -ne $LastCpu -and $cpu -eq $LastCpu) {
-                    if (-not $IdleSince) { $IdleSince = Get-Date }
-                    elseif (((Get-Date) - $IdleSince).TotalMinutes -ge 5) {
-                        Write-Msg "  Idle timeout - terminating: $Label" "Warning"
-                        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-                        break
-                    }
-                } else { $IdleSince = $null; $LastCpu = $cpu }
-            } catch { break }
-        }
-        Write-Msg "  Exit code $($Process.ExitCode): $Label" "Info"
-        # Safe/expected exit codes:
-        #   0     = success
-        #   3010  = success, reboot required
-        #   1605  = product not installed (MSI)
-        #   1614  = product not installed / uninstall already done
-        #   1646  = product not registered for this machine (per-user install)
-        #   7     = ODIS/setup: product not found (already removed by parent)
-        $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
-        if ($Process.ExitCode -notin $safeExitCodes) {
-            $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $Label"; Reason = "Exit Code $($Process.ExitCode)" }
-        } else {
-            Write-QuietLog "  Safe exit code $($Process.ExitCode) for: $Label"
-        }
-    }
-
     function Invoke-SACCustomUninstall {
-        param ([object]$App)
+        param (
+            [object]$App,
+            [string]$UninstallString
+        )
         $DisplayName     = $App.DisplayName
-        $UninstallString = $App.UninstallString
         if ([string]::IsNullOrWhiteSpace($UninstallString)) {
             Write-QuietLog "No UninstallString for $DisplayName. Skipping."
             return
@@ -318,7 +298,7 @@ function Start-SACCleanup {
         $FullArgs = "$ArgPart -q --silent /qn /quiet /norestart --mode unattended".Trim()
         try {
             $Process = Start-Process -FilePath $ExePath -ArgumentList $FullArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
-            Invoke-SACWaitOnProcess -Process $Process -Label $DisplayName
+            return $Process
         } catch {
             $msg = $_.Exception.Message
             # If the installer exe itself is gone the product was already removed - not a failure
