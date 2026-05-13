@@ -375,7 +375,7 @@ $command
         Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData and reg"
         Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache and FlexNet"
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
-        Write-BoxLine -Text "  [B]  Build Script           Generate a standalone PS1 script for deployment"
+        Write-BoxLine -Text "  [B]  Build Script           Build an SAC script to run later"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
         if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
             Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color "Yellow"
