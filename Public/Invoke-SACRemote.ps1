@@ -139,7 +139,7 @@ function Invoke-SACRemote {
         # If we side-loaded, we MUST import from the explicit path to bypass version shadowing
         $importPath = if ($UseSideLoad -and $ExplicitPath) { Join-Path $ExplicitPath "SurgicalAutodeskCleaner.psd1" } else { "SurgicalAutodeskCleaner" }
 
-        if (Get-Module -ListAvailable -Name SurgicalAutodeskCleaner -or (Test-Path $importPath)) {
+        if ((Get-Module -ListAvailable -Name SurgicalAutodeskCleaner) -or (Test-Path $importPath)) {
             Import-Module $importPath -Force
             Invoke-Expression $SACCommand
         } else {
