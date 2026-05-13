@@ -249,7 +249,7 @@ function Start-SACCleanup {
         }
 
         if ($null -ne $Process) {
-            Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5
+            Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5 -TailLogFile $MsiLogFile
             Write-Msg "  Exit code $($Process.ExitCode): $DisplayName" "Info"
             $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
             if ($Process.ExitCode -notin $safeExitCodes) {

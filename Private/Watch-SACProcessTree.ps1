@@ -22,7 +22,8 @@ function Watch-SACProcessTree {
         
         [string]$DisplayName = "Process",
         [int]$TimeoutMinutes = 20,
-        [int]$IdleTimeoutMinutes = 5
+        [int]$IdleTimeoutMinutes = 5,
+        [string]$TailLogFile = $null
     )
 
     $StartTime = Get-Date
@@ -140,11 +141,30 @@ function Watch-SACProcessTree {
 
         # 4. UI Feedback
         if (-not $isRemote) {
+            $tailPart = ""
+            if (-not [string]::IsNullOrWhiteSpace($TailLogFile) -and (Test-Path $TailLogFile)) {
+                try {
+                    $stream = New-Object System.IO.FileStream($TailLogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    if ($stream.Length -gt 2048) { $stream.Seek(-2048, [System.IO.SeekOrigin]::End) | Out-Null }
+                    $lines = $reader.ReadToEnd() -split "`n"
+                    $lastLine = ($lines | Where-Object { $_.Trim() -ne "" })[-1]
+                    if ($lastLine) {
+                        $tailStr = $lastLine.Trim()
+                        if ($tailStr.Length -gt 60) { $tailStr = $tailStr.Substring(0, 57) + "..." }
+                        $tailPart = " | Tail: $tailStr"
+                    }
+                    $reader.Close()
+                    $stream.Close()
+                } catch {}
+            }
+
             $elapsedStr = "{0:mm\:ss}" -f $elapsed
             $memStr = [math]::Round($totalMemMB, 1)
-            $statusLine = "    [Elapsed: $elapsedStr] | [Active Procs: $activeCount] | [Tree Mem: ${memStr}MB]"
+            $statusLine = "    [Elapsed: $elapsedStr] | [Active Procs: $activeCount] | [Tree Mem: ${memStr}MB]$tailPart"
             # Pad with spaces to overwrite previous line completely
-            $statusLine = $statusLine.PadRight(80)
+            # We use a larger padding just in case the tail fluctuates in size
+            $statusLine = $statusLine.PadRight(130)
             Write-Host "`r$statusLine" -NoNewline -ForegroundColor DarkGray
         }
 
