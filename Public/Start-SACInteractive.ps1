@@ -358,12 +358,18 @@ $command
             $st = $script:SACLastRunStatus
             Write-Host "$ML$border$MR" -ForegroundColor DarkCyan
             if ($st.Criticals -gt 0) {
-                Write-BoxLine -Text "  [!] Last Run ($($st.Operation)): $($st.Criticals) item(s) need attention" -Color "Red" -BorderColor "DarkCyan"
-                Write-BoxLine -Text "      $($st.Warnings) minor notice(s). Log: $($st.LogDir)" -Color "DarkGray" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  [!] Last Run ($($st.Operation)): Attention Required" -Color "Red" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "      [$($st.Criticals)] critical item(s) failed" -Color "Red" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "      [$($st.Warnings)] minor notice(s) logged" -Color "DarkGray" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  Log: $($st.LogDir)" -Color "DarkGray" -BorderColor "DarkCyan"
             } elseif ($st.Warnings -gt 0) {
-                Write-BoxLine -Text "  [~] Last Run ($($st.Operation)): OK  ($($st.Warnings) minor notice(s))" -Color "DarkYellow" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  [~] Last Run ($($st.Operation)): Attention Items" -Color "DarkYellow" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "      [$($st.Warnings)] minor notice(s) logged" -Color "DarkYellow" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  Log: $($st.LogDir)" -Color "DarkGray" -BorderColor "DarkCyan"
             } else {
-                Write-BoxLine -Text "  [OK] Last Run ($($st.Operation)): Completed successfully in $($st.Elapsed)" -Color "Green" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  [OK] Last Run ($($st.Operation)): Completed successfully" -Color "Green" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "      Time elapsed: $($st.Elapsed)" -Color "Green" -BorderColor "DarkCyan"
+                Write-BoxLine -Text "  Log: $($st.LogDir)" -Color "DarkGray" -BorderColor "DarkCyan"
             }
         }
 
@@ -378,7 +384,8 @@ $command
         Write-BoxLine -Text "  [B]  Build Script           Build an SAC script to run later"
         Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
         if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
-            Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color "Yellow"
+            $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
+            Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color $vColor
         }
         Write-BoxLine -Text "  [Q]  Quit"
         if ($PSVersionTable.PSVersion.Major -lt 7) {
