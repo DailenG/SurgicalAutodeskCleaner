@@ -381,8 +381,8 @@ $command
         Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData and reg"
         Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache and FlexNet"
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
-        Write-BoxLine -Text "  [B]  Build Script           Build an SAC script to run later"
-        Write-BoxLine -Text "  [6]  Restore User Profile   List/restore SAC backup folders"
+        Write-BoxLine -Text "  [6]  Build Script           Build an SAC script to run later"
+        Write-BoxLine -Text "  [7]  Restore User Profile   List/restore SAC backup folders"
         if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
             Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color $vColor
@@ -450,12 +450,12 @@ $command
                 Invoke-SACPause
             }
 
-            "B" {
+            "6" {
                 Invoke-SurgicalCleanupFlow -BuildScript
                 Invoke-SACPause
             }
 
-            "6" {
+            "7" {
                 Restore-SACUserProfile -List
                 Write-Host ""
                 $restoreChoice = Read-Host "  Restore a specific backup? Enter full path (or press Enter to return)"
@@ -481,7 +481,7 @@ $command
             }
 
             default {
-                Write-Host "`n  Invalid option. Please select 1-6 or Q." -ForegroundColor Yellow
+                Write-Host "`n  Invalid option. Please select 1-7 or Q." -ForegroundColor Yellow
                 Start-Sleep -Seconds 1
             }
         }
