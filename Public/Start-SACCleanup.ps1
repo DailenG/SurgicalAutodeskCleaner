@@ -553,4 +553,5 @@ function Start-SACCleanup {
     }
 
     Stop-Transcript | Out-Null
+    return $script:SACLastRunStatus
 }

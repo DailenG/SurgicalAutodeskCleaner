@@ -240,4 +240,5 @@ function Reset-SACLicensing {
     }
 
     Stop-Transcript | Out-Null
+    return $script:SACLastRunStatus
 }

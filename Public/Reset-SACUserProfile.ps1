@@ -268,4 +268,5 @@ function Reset-SACUserProfile {
     }
 
     Stop-Transcript | Out-Null
+    return $script:SACLastRunStatus
 }

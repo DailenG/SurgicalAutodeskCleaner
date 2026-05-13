@@ -414,10 +414,10 @@ $command
                 $yearArgs = $SelectedYears -join ","
                 $remoteCmd = "Start-SACCleanup -TargetProducts $prodArgs -TargetYears $yearArgs -Silent"
                 
-                Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command $remoteCmd -AutoInstall
+                return Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command $remoteCmd -AutoInstall
             } else {
                 Write-Host "`nExecuting Surgical Cleanup..." -ForegroundColor Cyan
-                Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears
+                return Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears
             }
         }
     }
@@ -534,9 +534,9 @@ $command
         Write-BoxLine -Text "  [6]  Build Cleanup Script   Build an SAC script to run later"
         Write-BoxLine -Text "  [7]  Restore User Profile   List/restore SAC backup folders"
         Write-BoxLine -Text "  [8]  View All Products      List all detected Autodesk software"
-        if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
+        if ($script:SACLastRunStatus.LogDir) {
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
-            Write-BoxLine -Text "  [V]  View Attention Items   Open logs for items requiring attention" -Color $vColor
+            Write-BoxLine -Text "  [L]  View Last Run Logs     Examine transcript or attention items" -Color $vColor
         }
         Write-Host $borderLine    -ForegroundColor DarkCyan
         $targetStr = if ($script:SACTarget.IsRemote) { 
@@ -558,7 +558,7 @@ $command
         switch ($choice.Trim().ToUpper()) {
 
             "1" {
-                Invoke-SurgicalCleanupFlow -ScanOnly $false
+                $script:SACLastRunStatus = Invoke-SurgicalCleanupFlow -ScanOnly $false
                 $needsRefresh = $true
                 Invoke-SACPause
             }
@@ -571,9 +571,9 @@ $command
                 if ($confirm -eq "PURGE") {
                     if ($script:SACTarget.IsRemote) {
                         Write-Host "`n  Dispatching Master Purge to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
-                        Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Start-SACPurge -Silent" -AutoInstall
+                        $script:SACLastRunStatus = Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Start-SACPurge -Silent" -AutoInstall
                     } else {
-                        Start-SACPurge
+                        $script:SACLastRunStatus = Start-SACPurge
                     }
                     $needsRefresh = $true
                 } else {
@@ -593,9 +593,9 @@ $command
                 if ($script:SACTarget.IsRemote) {
                     Write-Host "`n  Dispatching Profile Reset to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
                     $flags = if ($delRoaming) { "-DeleteRoaming -Silent" } else { "-Silent" }
-                    Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACUserProfile $flags" -AutoInstall
+                    $script:SACLastRunStatus = Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACUserProfile $flags" -AutoInstall
                 } else {
-                    if ($delRoaming) { Reset-SACUserProfile -DeleteRoaming } else { Reset-SACUserProfile }
+                    if ($delRoaming) { $script:SACLastRunStatus = Reset-SACUserProfile -DeleteRoaming } else { $script:SACLastRunStatus = Reset-SACUserProfile }
                 }
                 $needsRefresh = $true
                 Invoke-SACPause
@@ -609,9 +609,9 @@ $command
                 if ($script:SACTarget.IsRemote) {
                     Write-Host "`n  Dispatching Licensing Reset to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
                     $flags = if ($includeFlex) { "-IncludeFlexNet -Silent" } else { "-Silent" }
-                    Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACLicensing $flags" -AutoInstall
+                    $script:SACLastRunStatus = Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Reset-SACLicensing $flags" -AutoInstall
                 } else {
-                    if ($includeFlex) { Reset-SACLicensing -IncludeFlexNet } else { Reset-SACLicensing }
+                    if ($includeFlex) { $script:SACLastRunStatus = Reset-SACLicensing -IncludeFlexNet } else { $script:SACLastRunStatus = Reset-SACLicensing }
                 }
                 $needsRefresh = $true
                 Invoke-SACPause
@@ -652,13 +652,51 @@ $command
                 Invoke-SACPause
             }
 
-            "V" {
-                if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
-                    Write-Host "`nOpening Attention Items log in Notepad..." -ForegroundColor Cyan
-                    Start-Process "notepad.exe" -ArgumentList "`"$($script:SACLastRunStatus.AttentionItems)`""
-                } else {
-                    Write-Host "`nNo attention items found or log file missing." -ForegroundColor Yellow
+            "L" {
+                if (-not $script:SACLastRunStatus.LogDir) {
+                    Write-Host "`n  No log directory found for the last run." -ForegroundColor Yellow
                     Start-Sleep -Seconds 1
+                    continue
+                }
+
+                $logDir = $script:SACLastRunStatus.LogDir
+                $files = @()
+
+                Write-Host "`n  Retrieving log file list from ${targetStr}..." -ForegroundColor DarkGray
+                if ($script:SACTarget.IsRemote) {
+                    $files = Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock {
+                        Get-ChildItem -Path $using:logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                    } -ErrorAction SilentlyContinue
+                } else {
+                    $files = Get-ChildItem -Path $logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                }
+
+                if (-not $files) {
+                    Write-Host "  No log files found in $logDir" -ForegroundColor Yellow
+                    Invoke-SACPause
+                    continue
+                }
+
+                $selectedFile = Invoke-SACSelection -Items $files -Title "Select Log File to View"
+                if ($selectedFile) {
+                    $filePath = Join-Path $logDir $selectedFile[0]
+                    Write-Host "`n  Reading $selectedFile..." -ForegroundColor DarkGray
+                    
+                    $content = @()
+                    if ($script:SACTarget.IsRemote) {
+                        $content = Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock {
+                            Get-Content -Path $using:filePath -Tail 5000 -ErrorAction SilentlyContinue
+                        } -ErrorAction SilentlyContinue
+                    } else {
+                        $content = Get-Content -Path $filePath -Tail 5000 -ErrorAction SilentlyContinue
+                    }
+
+                    if ($content) {
+                        Invoke-SACSelection -Items $content -Title "Viewing: $selectedFile (Last 5000 lines)" -ViewerOnly
+                    } else {
+                        Write-Host "  Log file is empty or inaccessible." -ForegroundColor Yellow
+                        Invoke-SACPause
+                    }
                 }
             }
 

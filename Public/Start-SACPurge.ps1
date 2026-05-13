@@ -658,4 +658,5 @@ function Start-SACPurge {
     }
 
     Stop-Transcript | Out-Null
+    return $script:SACLastRunStatus
 }
