@@ -28,14 +28,16 @@ Published and maintained by **Dailen**.
 Autodesk products often leave behind deeply nested registry keys, orphaned background services, and fragmented shared dependencies. Scorched-earth uninstallation scripts often break global licensing (FlexNet/ODIS) for *other* software on the machine.
 
 **Surgical Autodesk Cleaner** takes a different approach:
+- **Enterprise Remote Dispatch:** Dispatch any SAC tool (Cleanup, Purge, Reset) to remote endpoints over WinRM with automated module bootstrapping.
+- **Resilient Monitoring:** Uses `CimSession` and `Get-CimInstance` for process-tree tracking, remaining stable across VPN drops or network latency.
+- **Zombie Detection:** Identifies hung installers by monitoring CPU/Memory deltas over time, forcibly reaping "zombie" processes that block uninstallation queues.
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
 - **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
-- **Deep Cleansing:** Purges orphaned installation directories using an enterprise-grade `robocopy /MIR` engine to bypass PowerShell's `MAX_PATH` limits and gracefully handle locked files, and destroys cyclical registry keys using native OS methods to prevent StackOverflow exceptions.
+- **Deep Cleansing:** Purges orphaned installation directories using an enterprise-grade `robocopy /MIR` engine to bypass PowerShell's `MAX_PATH` limits, and destroys cyclical registry keys using native OS methods (`reg.exe`) to prevent StackOverflow exceptions.
 - **Robust Pathing:** Automatically detects and utilizes $env:TEMP if C:\temp is unavailable, ensuring deployment reliability on locked-down systems.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
 - **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
 - **Smart Logging:** Dual-channel logging with a dedicated "Attention Items" summary file that surfaces critical failures for easy review.
-- **PowerShell Core Optimized:** While fully compatible with PowerShell 5.1, the **Interactive Mode (TUI)** is best experienced in **PowerShell 7+**.
 
 ---
 
@@ -43,7 +45,7 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 
 - **Operating System:** Windows 10/11 or Windows Server 2016+
 - **PowerShell Version:** 5.1 or **7.0+ (Recommended for TUI)**
-- **Permissions:** Administrative privileges are required for registry and service manipulation.
+- **Connectivity:** WinRM must be enabled on the target for Remote Dispatch features.
 
 ---
 
@@ -79,7 +81,7 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
-Supports **Out-ConsoleGridView** (PowerShell 7+) for multi-select with automatic install of `Microsoft.PowerShell.ConsoleGuiTools` if not present. Falls back to a native text-based menu if running headless or in a limited console.
+**New in v2.3:** Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 
 ```powershell
 Start-SAC
@@ -93,12 +95,32 @@ Start-SAC
 | `[3]` Reset User Profile | Rename/clear per-user AppData & registry |
 | `[4]` Reset Licensing | Wipe CLM, token cache & FlexNet stubs |
 | `[5]` Pre-Flight Scan | Simulate cleanup and export CSV report |
-| `[6]` Restore User Profile | List and restore SAC backup folders |
+| `[6]` Build Cleanup Script | Build an SAC script to run later |
+| `[7]` Restore User Profile | List and restore SAC backup folders |
+| `[T]` Target Remote Machine | Switch the session to a remote WinRM target |
 | `[V]` View Attention Items | Open failure logs in Notepad (Conditional) |
 
 ---
 
-### 2. `Start-SACCleanup`
+### 2. `Invoke-SACRemote`
+
+Dispatches any command or SAC function to a remote target. It handles connectivity verification, credential prompting, and can automatically install the SAC module on the target if missing.
+
+```powershell
+Invoke-SACRemote -ComputerName "ENG-CAD-04" -Command "Start-SACPurge -Silent" -AutoInstall
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-ComputerName` | `string` | The remote hostname or IP address. |
+| `-Command` | `string` | The PowerShell command string to execute remotely. |
+| `-Credential` | `PSCredential` | Optional credentials. Prompts if omitted for remote targets. |
+| `-AutoInstall` | `switch` | If set, checks for the SAC module on the target and installs it via PSGallery if missing. |
+
+---
+
+### 3. `Start-SACCleanup`
 
 The surgical strike engine. Designed for RMM deployment (N-Central, ConnectWise Automate, Intune) or silent background execution. Uninstalls only the specified products and years, leaving shared services and newer installations intact.
 

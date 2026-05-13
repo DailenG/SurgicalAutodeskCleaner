@@ -299,7 +299,7 @@ function Start-SACInteractive {
             $OutPath = "$([Environment]::GetFolderPath('Desktop'))\SAC_Deployment_$(Get-Date -Format 'yyyyMMdd_HHmmss').ps1"
             $prodString = ($SelectedProducts | ForEach-Object { "`"$_`"" }) -join ", "
             $yearString = $SelectedYears -join ", "
-            $command = "Start-SACCleanup -TargetProducts $prodString -TargetYears $yearString -Silent -AnyVendor"
+            $command = "Start-SACCleanup -TargetProducts $prodString -TargetYears $yearString -Silent"
             
             $scriptContent = @"
 <#
@@ -342,12 +342,12 @@ $command
                 Write-Host "`nDispatching Surgical Cleanup to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
                 $prodArgs = ($SelectedProducts | ForEach-Object { "`"$_`"" }) -join ","
                 $yearArgs = $SelectedYears -join ","
-                $remoteCmd = "Start-SACCleanup -TargetProducts $prodArgs -TargetYears $yearArgs -AnyVendor -Silent"
+                $remoteCmd = "Start-SACCleanup -TargetProducts $prodArgs -TargetYears $yearArgs -Silent"
                 
                 Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command $remoteCmd -AutoInstall
             } else {
                 Write-Host "`nExecuting Surgical Cleanup..." -ForegroundColor Cyan
-                Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears -AnyVendor
+                Start-SACCleanup -TargetProducts $SelectedProducts -TargetYears $SelectedYears
             }
         }
     }
@@ -396,7 +396,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.3.2-beta"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.3.3-beta"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -444,7 +444,7 @@ $command
         Write-BoxLine -Text "  [3]  Reset User Profile     Rename/clear per-user AppData and reg"
         Write-BoxLine -Text "  [4]  Reset Licensing        Wipe CLM, token cache and FlexNet"
         Write-BoxLine -Text "  [5]  Pre-Flight Scan        Simulate cleanup, export CSV report"
-        Write-BoxLine -Text "  [6]  Build Script           Build an SAC script to run later"
+        Write-BoxLine -Text "  [6]  Build Cleanup Script   Build an SAC script to run later"
         Write-BoxLine -Text "  [7]  Restore User Profile   List/restore SAC backup folders"
         if ($script:SACLastRunStatus.AttentionItems -and (Test-Path $script:SACLastRunStatus.AttentionItems)) {
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
