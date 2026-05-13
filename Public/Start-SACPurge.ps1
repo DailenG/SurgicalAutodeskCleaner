@@ -77,9 +77,10 @@ function Start-SACPurge {
         )
         
         $Shell = New-Object -ComObject WScript.Shell
-        $AutodeskPath = "$($env:ProgramFiles)\Autodesk"
-        $AutodeskPathX86 = "$(${env:ProgramFiles(x86)})\Autodesk"
-        $ShortcutPatterns = @("*AutoCAD*", "*Revit*", "*Autodesk*", "*Civil 3D*", "*BIM*", "*Recap*", "*Navisworks*", "*3ds Max*", "*Maya*", "*Inventor*")
+        $AutodeskPath = "$($env:ProgramFiles)\Autodesk\"
+        $AutodeskPathX86 = "$(${env:ProgramFiles(x86)})\Autodesk\"
+        # Stricter name patterns for fallback
+        $ShortcutPatterns = @("*AutoCAD*", "*Revit*", "*Autodesk*", "*Civil 3D*", "*BIM 360*", "*Recap*", "*Navisworks*", "*3ds Max*", "*Maya*", "*Inventor*")
 
         foreach ($loc in $ShortcutLocations) {
             # Resolve wildcards for user profiles
@@ -90,25 +91,34 @@ function Start-SACPurge {
                     Get-ChildItem -Path $path -Filter "*.lnk" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
                         $isMatch = $false
                         $lnkBore = $_
+                        $target = ""
 
-                        # Match 1: Name pattern
-                        foreach ($pattern in $ShortcutPatterns) {
-                            if ($lnkBore.Name -like "$pattern*") {
-                                $isMatch = $true
-                                break
-                            }
-                        }
-
-                        # Match 2: Target path (if not already matched)
-                        if (-not $isMatch) {
-                            try {
-                                $shortcut = $Shell.CreateShortcut($lnkBore.FullName)
-                                $target = $shortcut.TargetPath
+                        # --- STEP 1: Deep Inspection of Target Path (PRIORITY) ---
+                        try {
+                            $shortcut = $Shell.CreateShortcut($lnkBore.FullName)
+                            $target = $shortcut.TargetPath
+                            
+                            if (-not [string]::IsNullOrWhiteSpace($target)) {
+                                # If we HAVE a target path, the decision is based STRICTLY on that path.
                                 if ($target -like "$AutodeskPath*" -or $target -like "$AutodeskPathX86*") {
                                     $isMatch = $true
+                                } else {
+                                    # EXPLICIT SAFETY: If it points elsewhere (e.g., PDQ Inventory), it is NOT a match.
+                                    $isMatch = $false
                                 }
-                            } catch {
-                                Write-SACQuietLog "Failed to inspect shortcut target for $($lnkBore.FullName)"
+                            }
+                        } catch {
+                            Write-SACQuietLog "Failed to inspect shortcut target for $($lnkBore.FullName)"
+                        }
+
+                        # --- STEP 2: Name-Based Fallback (Only if Target Path is empty/unresolvable) ---
+                        # Some advertised shortcuts (MSI) return empty TargetPath via COM.
+                        if (-not $isMatch -and [string]::IsNullOrWhiteSpace($target)) {
+                            foreach ($pattern in $ShortcutPatterns) {
+                                if ($lnkBore.Name -like "$pattern*") {
+                                    $isMatch = $true
+                                    break
+                                }
                             }
                         }
 
@@ -205,12 +215,23 @@ function Start-SACPurge {
         Write-SACMsg "Locating SQL Server LocalDB MSIs..." "Info"
         $LocalDbRegex = "^Microsoft SQL Server (2014|2019).*LocalDB"
         $regPaths = @(
-            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
         )
-
-        $appsToUninstall = Get-ItemProperty $regPaths -ErrorAction SilentlyContinue | 
-        Where-Object { $_.DisplayName -match $LocalDbRegex }
+        $appsToUninstall = @()
+        foreach ($path in $regPaths) {
+            if (Test-Path $path) {
+                Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+                    $dn = $_.GetValue("DisplayName")
+                    if ($null -ne $dn -and $dn -match $LocalDbRegex) {
+                        $appsToUninstall += [PSCustomObject]@{
+                            DisplayName = $dn
+                            PSChildName = $_.PSChildName
+                        }
+                    }
+                }
+            }
+        }
 
         if ($appsToUninstall) {
             foreach ($app in $appsToUninstall) {
@@ -267,13 +288,32 @@ function Start-SACPurge {
                 $vendorPattern = ($vendors | ForEach-Object { [regex]::Escape($_) }) -join '|'
             }
 
-            $UninstallKeys = Get-ItemProperty -Path @(
-                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-            ) -ErrorAction SilentlyContinue | Where-Object { 
-                if (-not ($_.DisplayName -like $PackageName)) { return $false }
-                if ($AnyVendor) { return $true }
-                return ($_.Publisher -match $vendorPattern -or $_.DisplayName -match $vendorPattern)
+            $regPaths = @(
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+            )
+            $UninstallKeys = @()
+            foreach ($path in $regPaths) {
+                if (Test-Path $path) {
+                    Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+                        $dn = $_.GetValue("DisplayName")
+                        $pb = $_.GetValue("Publisher")
+                        
+                        if ($null -ne $dn -and $dn -like $PackageName) {
+                            if ($AnyVendor -or ($null -ne $pb -and $pb -match $vendorPattern) -or ($dn -match $vendorPattern)) {
+                                $UninstallKeys += [PSCustomObject]@{
+                                    DisplayName          = $dn
+                                    Publisher            = $pb
+                                    UninstallString      = $_.GetValue("UninstallString")
+                                    QuietUninstallString = $_.GetValue("QuietUninstallString")
+                                    InstallLocation      = $_.GetValue("InstallLocation")
+                                    PSChildName          = $_.PSChildName
+                                    PSPath               = $_.PSPath
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             $Tier2Pattern = 'Service Pack|\bSP\d\b|Hotfix|Patch|Update \d|Security Update'
@@ -308,12 +348,13 @@ function Start-SACPurge {
                 
                 $Process = $null
                 if ($ProductCode -match '^{.*}$') {
-                    if ($UninstallString -match '^MsiExec\.exe') {
+                    # Robust MSI detection: case-insensitive, handles quotes and paths
+                    if ($UninstallString -match 'msiexec\.exe') {
                         Write-SACMsg "  [MSI] $DisplayName" "Info"
                         $Process = Start-Process "msiexec.exe" -ArgumentList "/x $($ProductCode) /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$($MsiLogFile)`"" -PassThru -WindowStyle Hidden
                     }
                     else {
-                        Write-SACMsg "  [Custom] $DisplayName" "Info"
+                        Write-SACMsg "  [Custom-MSI] $DisplayName" "Info"
                         $Process = Invoke-SACCustomUninstall -App $app -UninstallString $UninstallString -DisplayName $DisplayName
                     }
                 }
@@ -372,12 +413,19 @@ function Start-SACPurge {
                     return $null
                 }
 
-                $FullArgs = "$($Arguments) --silent /qn /quiet /norestart --mode unattended".Trim()
+                # If it's MSIExec, we MUST avoid non-MSI flags like --silent or --mode
+                $isMsi = ($ExePath -match 'msiexec\.exe')
+                $FullArgs = if ($isMsi) {
+                    "$($Arguments) /qn /quiet /norestart".Trim()
+                } else {
+                    "$($Arguments) --silent /qn /quiet /norestart --mode unattended".Trim()
+                }
             
                 try {
                     # Use cmd /c with NUL redirection to discourage interactive prompts from hanging the process.
                     # We still use Start-Process -PassThru to get the PID for the Supervisor.
                     $cmdArgs = "/c `"`"$ExePath`" $FullArgs < NUL`""
+                    Write-SACQuietLog "Executing custom uninstall for ${DisplayName}: cmd.exe $cmdArgs"
                     return Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
                 }
                 catch {

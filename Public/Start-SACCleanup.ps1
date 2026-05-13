@@ -244,11 +244,12 @@ function Start-SACCleanup {
 
         $Process = $null
         if ($ProductCode -match '^{.*}$') {
-            if ($UninstallString -match '^MsiExec\.exe') {
+            # Robust MSI detection: case-insensitive, handles quotes and paths
+            if ($UninstallString -match 'msiexec\.exe') {
                 Write-SACMsg "  [MSI] $DisplayName" "Info"
                 $Process = Start-Process "msiexec.exe" -ArgumentList "/x $ProductCode /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$MsiLogFile`"" -PassThru -WindowStyle Hidden
             } else {
-                Write-SACMsg "  [Custom] $DisplayName" "Info"
+                Write-SACMsg "  [Custom-MSI] $DisplayName" "Info"
                 $Process = Invoke-SACCustomUninstall -App $App -UninstallString $UninstallString
             }
         } else {
@@ -303,11 +304,20 @@ function Start-SACCleanup {
             Write-SACQuietLog "Could not parse exe path for $DisplayName. Skipping."
             return
         }
-        $FullArgs = "$ArgPart --silent /qn /quiet /norestart --mode unattended".Trim()
+
+        # If it's MSIExec, we MUST avoid non-MSI flags like --silent or --mode
+        $isMsi = ($ExePath -match 'msiexec\.exe')
+        $FullArgs = if ($isMsi) {
+            "$ArgPart /qn /quiet /norestart".Trim()
+        } else {
+            "$ArgPart --silent /qn /quiet /norestart --mode unattended".Trim()
+        }
+
         try {
             # Use cmd /c with NUL redirection to discourage interactive prompts from hanging the process.
             # We still use Start-Process -PassThru to get the PID for the Supervisor.
             $cmdArgs = "/c `"`"$ExePath`" $FullArgs < NUL`""
+            Write-SACQuietLog "Executing custom uninstall for ${DisplayName}: cmd.exe $cmdArgs"
             $Process = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -PassThru -WindowStyle Hidden -ErrorAction Stop
             return $Process
         } catch {
@@ -339,13 +349,32 @@ function Start-SACCleanup {
             $vendorPattern = ($vendors | ForEach-Object { [regex]::Escape($_) }) -join '|'
         }
 
-        $AllKeys = Get-ItemProperty -Path @(
-            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        ) -ErrorAction SilentlyContinue | Where-Object {
-            if (-not ($_.DisplayName -like $PackageName)) { return $false }
-            if ($AnyVendor) { return $true }
-            return ($_.Publisher -match $vendorPattern -or $_.DisplayName -match $vendorPattern)
+        $regPaths = @(
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+        )
+        $AllKeys = @()
+        foreach ($path in $regPaths) {
+            if (Test-Path $path) {
+                Get-ChildItem -Path $path -ErrorAction SilentlyContinue | ForEach-Object {
+                    $dn = $_.GetValue("DisplayName")
+                    $pb = $_.GetValue("Publisher")
+                    
+                    if ($null -ne $dn -and $dn -like $PackageName) {
+                        if ($AnyVendor -or ($null -ne $pb -and $pb -match $vendorPattern) -or ($dn -match $vendorPattern)) {
+                            $AllKeys += [PSCustomObject]@{
+                                DisplayName          = $dn
+                                Publisher            = $pb
+                                UninstallString      = $_.GetValue("UninstallString")
+                                QuietUninstallString = $_.GetValue("QuietUninstallString")
+                                InstallLocation      = $_.GetValue("InstallLocation")
+                                PSChildName          = $_.PSChildName
+                                PSPath               = $_.PSPath
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (-not $AllKeys) {
