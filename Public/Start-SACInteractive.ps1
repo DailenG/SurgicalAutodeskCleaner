@@ -675,9 +675,13 @@ $command
 
                 Write-Host "`n  Retrieving log file list from ${targetStr}..." -ForegroundColor DarkGray
                 if ($script:SACTarget.IsRemote) {
-                    $files = Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock {
-                        Get-ChildItem -Path $using:logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-                    } -ErrorAction SilentlyContinue
+                    $cmdParams = @{
+                        ComputerName = $script:SACTarget.ComputerName
+                        ScriptBlock  = { Get-ChildItem -Path $using:logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name }
+                        ErrorAction  = "SilentlyContinue"
+                    }
+                    if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+                    $files = Invoke-Command @cmdParams
                 } else {
                     $files = Get-ChildItem -Path $logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
                 }
@@ -695,9 +699,13 @@ $command
                     
                     $content = @()
                     if ($script:SACTarget.IsRemote) {
-                        $content = Invoke-Command -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -ScriptBlock {
-                            Get-Content -Path $using:filePath -Tail 5000 -ErrorAction SilentlyContinue
-                        } -ErrorAction SilentlyContinue
+                        $cmdParams = @{
+                            ComputerName = $script:SACTarget.ComputerName
+                            ScriptBlock  = { Get-Content -Path $using:filePath -Tail 5000 -ErrorAction SilentlyContinue }
+                            ErrorAction  = "SilentlyContinue"
+                        }
+                        if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+                        $content = Invoke-Command @cmdParams
                     } else {
                         $content = Get-Content -Path $filePath -Tail 5000 -ErrorAction SilentlyContinue
                     }
