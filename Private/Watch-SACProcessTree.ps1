@@ -37,12 +37,14 @@ function Watch-SACProcessTree {
     $LastTotalMem = $null
     $StaticActivityTime = $null
     
-    # We maintain a stateful dictionary of known processes: PID -> CreationDate
+    # We maintain a stateful dictionary of known processes: [int] PID -> CreationDate
     # This completely eliminates PID recycling vulnerabilities.
     $KnownProcs = @{}
     
     if ($PSCmdlet.ParameterSetName -eq "ProcessObject") {
-        $RootPID = $RootProcess.Id
+        $RootPID = [int]$RootProcess.Id
+    } else {
+        $RootPID = [int]$RootPID
     }
 
     $CimSession = if ($ComputerName -ne "localhost") { 
@@ -56,15 +58,15 @@ function Watch-SACProcessTree {
         
         $rootCim = Get-CimInstance @cimParams
         if ($rootCim) { 
-            $KnownProcs[$RootPID] = $rootCim.CreationDate 
+            $KnownProcs[[int]$rootCim.ProcessId] = $rootCim.CreationDate 
         }
     } catch {
         # If it exited before we could grab CIM info, we try to use the StartTime from the process object
         # as a fallback for PID recycling defense.
         if ($PSCmdlet.ParameterSetName -eq "ProcessObject") {
-            try { $KnownProcs[$RootPID] = $RootProcess.StartTime } catch { $KnownProcs[$RootPID] = $StartTime }
+            try { $KnownProcs[[int]$RootPID] = $RootProcess.StartTime } catch { $KnownProcs[[int]$RootPID] = $StartTime }
         } else {
-            $KnownProcs[$RootPID] = $StartTime
+            $KnownProcs[[int]$RootPID] = $StartTime
         }
     }
 
@@ -82,20 +84,22 @@ function Watch-SACProcessTree {
         # Build a quick lookup dictionary for this loop
         $currentProcs = @{ "TotalCount" = $allProcs.Count }
         foreach ($p in $allProcs) {
-            $currentProcs[$p.ProcessId] = $p
+            $currentProcs[[int]$p.ProcessId] = $p
         }
 
         $addedNew = $true
         while ($addedNew) {
             $addedNew = $false
             foreach ($p in $allProcs) {
+                $pId = [int]$p.ProcessId
+                $parentId = [int]$p.ParentProcessId
                 # If this process is NOT known, but its parent IS known...
-                if (-not $KnownProcs.ContainsKey($p.ProcessId) -and $KnownProcs.ContainsKey($p.ParentProcessId)) {
-                    $parentCreationTime = $KnownProcs[$p.ParentProcessId]
+                if (-not $KnownProcs.ContainsKey($pId) -and $KnownProcs.ContainsKey($parentId)) {
+                    $parentCreationTime = $KnownProcs[$parentId]
                     # PID Recycling Defense: The child must be created at or after the parent's creation time.
                     # Note: We allow a 2-second margin for potential clock skew or StartTime vs CreationDate deltas.
                     if ($p.CreationDate -ge $parentCreationTime.AddSeconds(-2)) {
-                        $KnownProcs[$p.ProcessId] = $p.CreationDate
+                        $KnownProcs[$pId] = $p.CreationDate
                         $addedNew = $true
                     }
                 }
@@ -107,7 +111,9 @@ function Watch-SACProcessTree {
     $isRemote = ($ComputerName -ne "localhost") -or (Test-SACRemoteSession)
 
     Write-Host "`n  Monitoring process tree for $DisplayName..." -ForegroundColor Cyan
+    Write-SACQuietLog "Supervisor started for $DisplayName (RootPID: $RootPID, Target: $ComputerName)"
 
+    $busyDots = ""
     while ($true) {
         $elapsed = (Get-Date) - $StartTime
 
@@ -124,6 +130,7 @@ function Watch-SACProcessTree {
 
         # 1. Check Hard Timeout
         if ($elapsed.TotalMinutes -ge $TimeoutMinutes) {
+            Write-SACQuietLog "Supervisor Hard Timeout ($TimeoutMinutes m) reached for $DisplayName. Killing tree."
             Write-Host "`n  [!] Hard timeout ($TimeoutMinutes m) reached for $DisplayName. Terminating tree." -ForegroundColor Red
             foreach ($pidToKill in $KnownProcs.Keys) {
                 if ($ComputerName -ne "localhost") {
@@ -178,11 +185,15 @@ function Watch-SACProcessTree {
             try {
                 $RootProcess.Refresh()
                 $RootProcess.HasExited
-            } catch { $true } # If we can't even refresh, it's likely gone
+            } catch { 
+                Write-SACQuietLog "Supervisor failed to refresh RootProcess object for $DisplayName. Assuming dead."
+                $true 
+            }
         }
 
         # Final exit condition: Root is dead AND no active descendants found
         if ($rootIsDead -and $activeCount -eq 0) {
+            Write-SACQuietLog "Supervisor exit condition met for $DisplayName (Root is dead, descendants: 0)"
             Write-Host "`n  [*] Process tree for $DisplayName has exited cleanly." -ForegroundColor Green
             break
         }
@@ -190,9 +201,12 @@ function Watch-SACProcessTree {
         # Safety fallback: If root is dead and we've seen 0 active procs for 3 seconds, 
         # and CIM successfully returned a process list, assume we're done.
         if ($rootIsDead -and $activeCount -eq 0 -and $elapsed.TotalSeconds -gt 3 -and $null -ne $currentCimProcs) {
+             Write-SACQuietLog "Supervisor Safety Fallback met for $DisplayName (Root dead, active: 0, elapsed: $($elapsed.TotalSeconds)s)"
              Write-Host "`n  [*] No active descendants found for $DisplayName. Monitor closing." -ForegroundColor Green
              break
         }
+
+        Write-SACQuietLog "Supervisor status for ${DisplayName}: RootDead=$rootIsDead, Active=$activeCount, CPU=$totalCpu, Mem=$totalMemMB"
 
         # 3. Enhanced Zombie Detection (Idle CPU + Static Memory)
         # If an uninstaller hangs on a hidden dialog, CPU usage is 0 and WorkingSet is usually static.
@@ -220,27 +234,36 @@ function Watch-SACProcessTree {
 
         # 4. UI Feedback
         if (-not $isRemote) {
-            $tailPart = ""
-            if (-not [string]::IsNullOrWhiteSpace($TailLogFile) -and (Test-Path $TailLogFile)) {
-                try {
-                    $stream = New-Object System.IO.FileStream($TailLogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-                    $reader = New-Object System.IO.StreamReader($stream)
-                    if ($stream.Length -gt 2048) { $stream.Seek(-2048, [System.IO.SeekOrigin]::End) | Out-Null }
-                    $lines = $reader.ReadToEnd() -split "`n"
-                    $lastLine = ($lines | Where-Object { $_.Trim() -ne "" })[-1]
-                    if ($lastLine) {
-                        $tailStr = $lastLine.Trim()
-                        if ($tailStr.Length -gt 60) { $tailStr = $tailStr.Substring(0, 57) + "..." }
-                        $tailPart = " | Tail: $tailStr"
-                    }
-                    $reader.Close()
-                    $stream.Close()
-                } catch {}
-            }
+            $statusLine = ""
+            if ($activeCount -gt 0) {
+                # Standard tree monitoring view
+                $tailPart = ""
+                if (-not [string]::IsNullOrWhiteSpace($TailLogFile) -and (Test-Path $TailLogFile)) {
+                    try {
+                        $stream = New-Object System.IO.FileStream($TailLogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        if ($stream.Length -gt 2048) { $stream.Seek(-2048, [System.IO.SeekOrigin]::End) | Out-Null }
+                        $lines = $reader.ReadToEnd() -split "`n"
+                        $lastLine = ($lines | Where-Object { $_.Trim() -ne "" })[-1]
+                        if ($lastLine) {
+                            $tailStr = $lastLine.Trim()
+                            if ($tailStr.Length -gt 60) { $tailStr = $tailStr.Substring(0, 57) + "..." }
+                            $tailPart = " | Tail: $tailStr"
+                        }
+                        $reader.Close()
+                        $stream.Close()
+                    } catch {}
+                }
 
-            $elapsedStr = "{0:mm\:ss}" -f $elapsed
-            $memStr = [math]::Round($totalMemMB, 1)
-            $statusLine = "    [Elapsed: $elapsedStr] | [Active Procs: $activeCount] | [Tree Mem: ${memStr}MB]$tailPart"
+                $elapsedStr = "{0:mm\:ss}" -f $elapsed
+                $memStr = [math]::Round($totalMemMB, 1)
+                $statusLine = "    [Elapsed: $elapsedStr] | [Active Procs: $activeCount] | [Tree Mem: ${memStr}MB]$tailPart"
+            } else {
+                # 'Busy' animation while waiting for discovery or for children to spawn
+                if ($busyDots.Length -ge 10) { $busyDots = "" } else { $busyDots += "." }
+                $statusLine = "    Initializing process tree discovery$busyDots"
+            }
+            
             $statusLine = $statusLine.PadRight(130)
             Write-Host "`r$statusLine" -NoNewline -ForegroundColor DarkGray
         }
