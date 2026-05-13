@@ -105,32 +105,7 @@ function Start-SACCleanup {
 
     Start-Transcript -Path $TranscriptLog -Append -Force | Out-Null
 
-    # --- Helper Functions ---
-    function Write-Msg {
-        param (
-            [string]$Message,
-            [ValidateSet("Info", "Success", "Warning", "Error")]
-            [string]$Type = "Info"
-        )
-        $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
-        $Colors = @{
-            "Info"    = "Cyan"
-            "Success" = "Green"
-            "Warning" = "Yellow"
-            "Error"   = "Red"
-        }
-        Write-Host "$($TimeStamp) $($Message)" -ForegroundColor $Colors[$Type]
-    }
-
-    function Write-QuietLog {
-        param ([string]$Message)
-        $TimeStamp = "[$(Get-Date -Format 'HH:mm:ss')]"
-        Add-Content -Path $DebugLog -Value "$($TimeStamp) [DEBUG] $($Message)"
-    }
-
-    function Test-Interactive {
-        return [Environment]::UserInteractive -and -not $Silent -and ($host.Name -eq "ConsoleHost" -or $host.Name -match "ISE|VS Code")
-    }
+    # --- Helper Functions (Centralized in Private\Invoke-SACLogger.ps1) ---
 
     function Invoke-SurgicalDirectoryCleanup {
         param ([string]$ProductName, [string]$Version)
@@ -151,7 +126,7 @@ function Start-SACCleanup {
                     $purgeResult = Invoke-SACRobocopyPurge -TargetPath $fp
                     
                     if (-not $purgeResult.Success) {
-                        Write-QuietLog "Failed to fully remove directory $fp (files likely locked)."
+                        Write-SACQuietLog "Failed to fully remove directory $fp (files likely locked)."
                         
                         $failReason = "Files are locked/in-use."
                         if ($purgeResult.LockedItems.Count -gt 0) {
@@ -160,7 +135,7 @@ function Start-SACCleanup {
                         
                         $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
                     } else {
-                        Write-Msg "Purged orphaned directory: $fp" "Success"
+                        Write-SACMsg "Purged orphaned directory: $fp" "Success"
                     }
                 }
             }
@@ -188,9 +163,9 @@ function Start-SACCleanup {
                     Get-ChildItem -Path $path -Filter $SearchPattern -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
                         try {
                             Remove-Item $_.FullName -Force -ErrorAction Stop
-                            Write-Msg "Removed shortcut: $($_.Name)" "Success"
+                            Write-SACMsg "Removed shortcut: $($_.Name)" "Success"
                         } catch {
-                            Write-QuietLog "Failed to remove shortcut $($_.FullName): $($_.Exception.Message)"
+                            Write-SACQuietLog "Failed to remove shortcut $($_.FullName): $($_.Exception.Message)"
                         }
                     }
                 }
@@ -239,15 +214,15 @@ function Start-SACCleanup {
         $UninstallString = if (-not [string]::IsNullOrWhiteSpace($QuietUninstallString)) { $QuietUninstallString } else { $App.UninstallString }
         $MsiLogFile     = "$LogDir\$($DisplayName -replace '[\\/:*?"<>|]', '')_Uninstall.log"
 
-        Write-Msg "Uninstalling: $DisplayName" "Warning"
+        Write-SACMsg "Uninstalling: $DisplayName" "Warning"
 
         $Process = $null
         if ($ProductCode -match '^{.*}$') {
             if ($UninstallString -match '^MsiExec\.exe') {
-                Write-Msg "  [MSI] $DisplayName" "Info"
+                Write-SACMsg "  [MSI] $DisplayName" "Info"
                 $Process = Start-Process "msiexec.exe" -ArgumentList "/x $ProductCode /qn /norestart REBOOT=ReallySuppress MSIRESTARTMANAGERCONTROL=Disable /L*v `"$MsiLogFile`"" -PassThru -WindowStyle Hidden
             } else {
-                Write-Msg "  [Custom] $DisplayName" "Info"
+                Write-SACMsg "  [Custom] $DisplayName" "Info"
                 $Process = Invoke-SACCustomUninstall -App $App -UninstallString $UninstallString
             }
         } else {
@@ -257,12 +232,12 @@ function Start-SACCleanup {
 
         if ($null -ne $Process) {
             Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5 -TailLogFile $MsiLogFile
-            Write-Msg "  Exit code $($Process.ExitCode): $DisplayName" "Info"
+            Write-SACMsg "  Exit code $($Process.ExitCode): $DisplayName" "Info"
             $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
             if ($Process.ExitCode -notin $safeExitCodes) {
                 $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
             } else {
-                Write-QuietLog "  Safe exit code $($Process.ExitCode) for: $DisplayName"
+                Write-SACQuietLog "  Safe exit code $($Process.ExitCode) for: $DisplayName"
             }
         }
 
@@ -271,14 +246,14 @@ function Start-SACCleanup {
         if (Test-Path $App.PSPath) {
             try {
                 Remove-Item $App.PSPath -Recurse -Force -ErrorAction Stop
-                Write-Msg "  Evicted registry key: $DisplayName" "Success"
+                Write-SACMsg "  Evicted registry key: $DisplayName" "Success"
             } catch {
-                Write-QuietLog "Failed to evict registry key for $DisplayName ($($App.PSPath)): $($_.Exception.Message)"
+                Write-SACQuietLog "Failed to evict registry key for $DisplayName ($($App.PSPath)): $($_.Exception.Message)"
                 $script:SACFailures += [PSCustomObject]@{ Component = "Registry Eviction: $DisplayName"; Reason = $_.Exception.Message }
             }
         } else {
-            Write-Msg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
-            Write-QuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
+            Write-SACMsg "  Registry key already removed (self-cleaned): $DisplayName" "Success"
+            Write-SACQuietLog "Eviction skipped - key not found (uninstaller self-cleaned): $($App.PSPath)"
         }
     }
 
@@ -289,7 +264,7 @@ function Start-SACCleanup {
         )
         $DisplayName     = $App.DisplayName
         if ([string]::IsNullOrWhiteSpace($UninstallString)) {
-            Write-QuietLog "No UninstallString for $DisplayName. Skipping."
+            Write-SACQuietLog "No UninstallString for $DisplayName. Skipping."
             return
         }
         $ExePath  = ''
@@ -299,7 +274,7 @@ function Start-SACCleanup {
         else                                               { $ExePath = $UninstallString }
 
         if ([string]::IsNullOrWhiteSpace($ExePath)) {
-            Write-QuietLog "Could not parse exe path for $DisplayName. Skipping."
+            Write-SACQuietLog "Could not parse exe path for $DisplayName. Skipping."
             return
         }
         $FullArgs = "$ArgPart --silent /qn /quiet /norestart --mode unattended".Trim()
@@ -310,11 +285,11 @@ function Start-SACCleanup {
             $msg = $_.Exception.Message
             # If the installer exe itself is gone the product was already removed - not a failure
             if ($_.Exception -is [System.ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -in @(2, 3)) {
-                Write-Msg "  Installer not found (already removed): $DisplayName" "Info"
-                Write-QuietLog "Installer exe not found for $($DisplayName) - treating as already removed."
+                Write-SACMsg "  Installer not found (already removed): $DisplayName" "Info"
+                Write-SACQuietLog "Installer exe not found for $($DisplayName) - treating as already removed."
             } else {
-                Write-QuietLog "Failed to launch uninstaller for $($DisplayName): $msg"
-                Write-Msg "  Launch failed for $DisplayName (see Debug Log)" "Error"
+                Write-SACQuietLog "Failed to launch uninstaller for $($DisplayName): $msg"
+                Write-SACMsg "  Launch failed for $DisplayName (see Debug Log)" "Error"
                 $script:SACFailures += [PSCustomObject]@{ Component = "Uninstaller Launch: $DisplayName"; Reason = $msg }
             }
         }
@@ -345,14 +320,14 @@ function Start-SACCleanup {
         }
 
         if (-not $AllKeys) {
-            Write-QuietLog "No registry match for $ProductName $Version."
+            Write-SACQuietLog "No registry match for $ProductName $Version."
             return
         }
 
         # Kill running processes before we start
         foreach ($procName in $ProcessesToKill) {
             try { Get-Process -Name $procName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction Stop }
-            catch { Write-QuietLog "Could not stop process $procName`: $($_.Exception.Message)" }
+            catch { Write-SACQuietLog "Could not stop process $procName`: $($_.Exception.Message)" }
         }
 
         # Classify and annotate each entry
@@ -367,7 +342,7 @@ function Start-SACCleanup {
 
         $total = $Classified.Count
         $skippable = $Tier2.Count + $Tier3.Count
-        Write-Msg "Found $total component(s) for $($ProductName) $($Version): $($Tier1.Count) primary, $skippable update/addon(s), $($Tier4.Count) shared." "Info"
+        Write-SACMsg "Found $total component(s) for $($ProductName) $($Version): $($Tier1.Count) primary, $skippable update/addon(s), $($Tier4.Count) shared." "Info"
 
         # --- Tier 1: Primary products (full uninstall) ---
         $tier1Succeeded = New-Object 'System.Collections.Generic.HashSet[string]'
@@ -384,16 +359,16 @@ function Start-SACCleanup {
             # Check if any T1 parent of this update was successfully processed
             $parentFound = $tier1Succeeded.Count -gt 0
             if ($parentFound) {
-                Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                Write-SACMsg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
                 try {
                     Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
-                    Write-Msg "  Evicted: $dn" "Success"
+                    Write-SACMsg "  Evicted: $dn" "Success"
                 } catch {
-                    Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                    Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
                     $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
-                Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                Write-SACMsg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                 Invoke-SACUninstallEntry -App $item.App
             }
         }
@@ -403,16 +378,16 @@ function Start-SACCleanup {
             $dn = $item.App.DisplayName
             $parentFound = $tier1Succeeded.Count -gt 0
             if ($parentFound) {
-                Write-Msg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
+                Write-SACMsg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
                 try {
                     Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
-                    Write-Msg "  Evicted: $dn" "Success"
+                    Write-SACMsg "  Evicted: $dn" "Success"
                 } catch {
-                    Write-QuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                    Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
                     $script:SACFailures += [PSCustomObject]@{ Component = "Evict Addon: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
                 }
             } else {
-                Write-Msg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
+                Write-SACMsg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
                 Invoke-SACUninstallEntry -App $item.App
             }
         }
@@ -429,28 +404,28 @@ function Start-SACCleanup {
 
     # --- Execution Block ---
     if (-not (Test-SACRemoteSession)) { Clear-Host }
-    Write-Msg "==========================================" "Info"
-    Write-Msg " SURGICAL AUTODESK CLEANUP INITIALIZED" "Info"
-    Write-Msg " Transcript: $($TranscriptLog)" "Info"
-    Write-Msg " Debug Log:  $($DebugLog)" "Info"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " SURGICAL AUTODESK CLEANUP INITIALIZED" "Info"
+    Write-SACMsg " Transcript: $($TranscriptLog)" "Info"
+    Write-SACMsg " Debug Log:  $($DebugLog)" "Info"
+    Write-SACMsg "==========================================" "Info"
 
-    if (Test-Interactive) {
+    if (Test-SACInteractive -Silent $Silent) {
         Write-Host "`nTarget Products: $($TargetProducts -join ', ')" -ForegroundColor Cyan
         Write-Host "Target Years: $($TargetYears -join ', ')`n" -ForegroundColor Cyan
         Write-Host "WARNING: This will forcefully remove the specified versions.`n" -ForegroundColor Yellow
         $Response = Read-Host "Type 'YES' to proceed"
         if ($Response -ne "YES") { 
-            Write-Msg "Execution aborted by user." "Warning"
+            Write-SACMsg "Execution aborted by user." "Warning"
             Stop-Transcript | Out-Null
             exit 
         }
     }
     else {
-        Write-Msg "Running in non-interactive/silent mode." "Info"
+        Write-SACMsg "Running in non-interactive/silent mode." "Info"
     }
 
-    Write-Msg "Processing $($TargetProducts.Count) product(s) across $($TargetYears.Count) year(s)..." "Info"
+    Write-SACMsg "Processing $($TargetProducts.Count) product(s) across $($TargetYears.Count) year(s)..." "Info"
     foreach ($year in ($TargetYears | Sort-Object)) {
         foreach ($product in $TargetProducts) {
             Invoke-UninstallAutodeskProduct -ProductName $product -Version $year.ToString()
@@ -459,9 +434,9 @@ function Start-SACCleanup {
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
-    Write-Msg "==========================================" "Info"
-    Write-Msg " CLEANUP COMPLETED in $($ElapsedTime)" "Success"
-    Write-Msg "==========================================" "Info"
+    Write-SACMsg "==========================================" "Info"
+    Write-SACMsg " CLEANUP COMPLETED in $($ElapsedTime)" "Success"
+    Write-SACMsg "==========================================" "Info"
 
     $criticals = @($script:SACFailures | Where-Object { $_.Severity -ne 'Warning' })
     $warnings   = @($script:SACFailures | Where-Object { $_.Severity -eq 'Warning' })
