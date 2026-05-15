@@ -107,16 +107,19 @@ function Reset-SACLicensing {
         Write-SACMsg "Running in silent/non-interactive mode." "Info"
     }
 
-    # --- Stop licensing service before wipe ---
-    $LicService = Get-Service -Name "AdskLicensing" -ErrorAction SilentlyContinue
-    if ($LicService -and $LicService.Status -eq "Running") {
-        Write-SACMsg "Stopping AdskLicensing service..." "Info"
-        try {
-            Stop-Service -Name "AdskLicensing" -Force -ErrorAction Stop
-            Write-SACMsg "AdskLicensing service stopped." "Success"
-        } catch {
-            Write-SACQuietLog "Failed to stop AdskLicensing: $($_.Exception.Message)"
-            Write-SACMsg "Warning: Could not stop AdskLicensing service. Files may be locked." "Warning"
+    # --- Stop licensing and access services before wipe ---
+    $ServicesToStop = @("AdskLicensing", "AdskAccessService", "AGSService", "Autodesk Genuine Service")
+    foreach ($svcName in $ServicesToStop) {
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            Write-SACMsg "Stopping $svcName service..." "Info"
+            try {
+                Stop-Service -Name $svcName -Force -ErrorAction Stop
+                Write-SACMsg "$svcName service stopped." "Success"
+            } catch {
+                Write-SACQuietLog "Failed to stop $svcName: $($_.Exception.Message)"
+                Write-SACMsg "Warning: Could not stop $svcName service. Files may be locked." "Warning"
+            }
         }
     }
 

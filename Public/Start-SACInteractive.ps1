@@ -281,7 +281,7 @@ function Start-SACInteractive {
 
             # Process discovery (remote-aware)
             $processDiscoveryBlock = {
-                $ProcessesToKill = @("acad*","AcEventSync*","AcQMod*","revit*","3dsmax*","maya*","inventor*","roamer*","navisworks*","recap*","dwgviewr*")
+                $ProcessesToKill = @("acad*","AcEventSync*","AcQMod*","revit*","*adsk*","AdskAccess*","GenuineService*","AGS*","3dsmax*","maya*","inventor*","roamer*","navisworks*","recap*","dwgviewr*")
                 $results = @()
                 foreach ($procPattern in $ProcessesToKill) {
                     Get-Process -Name $procPattern -ErrorAction SilentlyContinue | ForEach-Object {

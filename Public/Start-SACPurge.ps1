@@ -29,7 +29,7 @@ function Start-SACPurge {
         @{Name = "Autodesk"; Versions = @("*") }
     )
 
-    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "*AdAppMgr*", "*AdODIS*", "*Autodesk*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*")
+    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "*AdAppMgr*", "*AdODIS*", "*Autodesk*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*")
 
     $DataLocations = @(
         "$($env:ProgramData)\Autodesk",
@@ -534,6 +534,9 @@ function Start-SACPurge {
     Stop-AndRemoveService -ServiceName "Autodesk"
     Stop-AndRemoveService -ServiceName "Adsk"
     Stop-AndRemoveService -ServiceName "ODIS"
+    Stop-AndRemoveService -ServiceName "AdskAccessService"
+    Stop-AndRemoveService -ServiceName "AGS"
+    Stop-AndRemoveService -ServiceName "Genuine"
 
     Invoke-RemoveODISAndLicensing
     Invoke-RemoveSQLLocalDB
@@ -602,6 +605,11 @@ function Start-SACPurge {
                 }
 
                 $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
+
+                if ($purgeResult.LockedItems.Count -gt 0) {
+                    Write-SACMsg "  Queuing $($purgeResult.LockedItems.Count) locked item(s) for deletion on reboot." "Warning"
+                    Invoke-SACPendingDelete -Paths $purgeResult.LockedItems
+                }
             } else {
                 Write-SACMsg "Purged directory: $fp" "Success"
             }

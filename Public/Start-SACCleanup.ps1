@@ -92,7 +92,7 @@ function Start-SACCleanup {
     $script:SACFailures = @()
 
     # Processes that are safe to kill if an older version is hanging (excluding shared system services/tray apps)
-    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*")
+    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*")
 
     # --- Logging Setup ---
     $ToDate = (Get-Date -Format 'yyyyMMdd_HHmmss')
@@ -134,6 +134,11 @@ function Start-SACCleanup {
                         }
                         
                         $script:SACFailures += [PSCustomObject]@{ Component = "Directory Purge (Partial): $fp"; Reason = $failReason }
+                        
+                        if ($purgeResult.LockedItems.Count -gt 0) {
+                            Write-SACMsg "  Queuing $($purgeResult.LockedItems.Count) locked item(s) for deletion on reboot." "Warning"
+                            Invoke-SACPendingDelete -Paths $purgeResult.LockedItems
+                        }
                     } else {
                         Write-SACMsg "Purged orphaned directory: $fp" "Success"
                     }
@@ -380,6 +385,13 @@ function Start-SACCleanup {
         if (-not $AllKeys) {
             Write-SACQuietLog "No registry match for $ProductName $Version."
             return
+        }
+
+        # Stop AdskAccessService if running to prevent file locks during directory purge
+        $AccessSvc = Get-Service -Name "AdskAccessService" -ErrorAction SilentlyContinue
+        if ($AccessSvc -and $AccessSvc.Status -eq "Running") {
+            Write-SACMsg "Stopping AdskAccessService to prevent file locks..." "Info"
+            try { Stop-Service -Name "AdskAccessService" -Force -ErrorAction Stop } catch { Write-SACQuietLog "Failed to stop AdskAccessService: $($_.Exception.Message)" }
         }
 
         # Kill running processes before we start
