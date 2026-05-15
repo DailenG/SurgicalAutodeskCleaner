@@ -129,9 +129,6 @@ function Invoke-SACRemote {
                 Scope        = 'CurrentUser'
                 ErrorAction  = 'SilentlyContinue'
             }
-            if ((Get-Command Install-Module).Parameters.Keys -contains 'AcceptLicense') {
-                $installParams['AcceptLicense'] = $true
-            }
             
             Install-Module @installParams
         }
