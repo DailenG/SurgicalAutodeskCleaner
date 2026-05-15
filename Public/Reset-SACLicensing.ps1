@@ -117,7 +117,7 @@ function Reset-SACLicensing {
                 Stop-Service -Name $svcName -Force -ErrorAction Stop
                 Write-SACMsg "$svcName service stopped." "Success"
             } catch {
-                Write-SACQuietLog "Failed to stop $svcName: $($_.Exception.Message)"
+                Write-SACQuietLog "Failed to stop ${svcName}: $($_.Exception.Message)"
                 Write-SACMsg "Warning: Could not stop $svcName service. Files may be locked." "Warning"
             }
         }
