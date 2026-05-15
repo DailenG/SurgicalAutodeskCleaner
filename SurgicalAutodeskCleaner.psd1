@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion = '2.4.1'
+    ModuleVersion = '2.5.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -35,9 +35,9 @@
     Compatible with PowerShell 5.1 and 7.0+. Note: Interactive Mode (TUI) is best experienced in PowerShell 7+.
 
 Features:
-- Start-SACInteractive (Alias: Start-SAC): Full interactive main menu with a conditional "View Attention Items" log viewer.
-- Start-SACCleanup: Surgical background removal tool with robust $env:TEMP pathing.
-- Start-SACPurge: Scorched-earth registry and file system master purge.
+- Start-SACInteractive (Alias: Start-SAC): Full interactive main menu with a conditional "View Attention Items" log viewer. Supports remote WinRM dispatch and service hardening.
+- Start-SACCleanup: Surgical background removal tool with reboot deletion queue for locked files.
+- Start-SACPurge: Scorched-earth registry and file system master purge with explicit AGS/Genuine service removal.
 - Start-SACScan: Generates CSV pre-flight scan reports of targeted deletions.
 - Reset-SACUserProfile: Resets per-user Autodesk AppData (rename Roaming, delete Local) for a clean-start experience without destroying user customizations.
 - Reset-SACLicensing: Wipes CLM, AdskLicensing, and SSO token cache to force clean re-authentication. Resolves stuck activation and seat reservation issues.
@@ -114,7 +114,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
             Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Licensing', 'UserProfile', 'Dailen'
 
             # Prerelease string
-            # Prerelease = ''
+            Prerelease = 'beta'
 
             # A URL to the license for this module.
             LicenseUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner/blob/master/LICENSE'

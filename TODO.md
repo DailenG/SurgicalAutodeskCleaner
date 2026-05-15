@@ -10,6 +10,9 @@
     - Explore using `ForEach-Object -Parallel` for independent file system and registry wiping once all uninstallers have finished.
 - [x] **Enhanced Logging**
     - [x] Real-time log tailing within the supervisor loop to surface uninstaller errors directly to the main console.
+- [x] **Service & Lock Hardening**
+    - [x] Explicitly target `AdskAccessService` and `GenuineService` (AGS) for removal.
+    - [x] Implement a `PendingFileRenameOperations` queue for locked files (Reboot Deletion).
 - [ ] **Unit Testing Improvements**
     - Increase coverage for `Get-SACTier` classification logic.
     - Add mock-based testing for registry parsing and uninstaller launch logic.

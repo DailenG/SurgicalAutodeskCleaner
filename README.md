@@ -34,6 +34,8 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
 - **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
 - **Deep Cleansing:** Purges orphaned installation directories using an enterprise-grade `robocopy /MIR` engine to bypass PowerShell's `MAX_PATH` limits, and destroys cyclical registry keys using native OS methods (`reg.exe`) to prevent StackOverflow exceptions.
+- **Reboot Deletion Queue:** Automatically queues locked files (like the stubborn Genuine Service DLLs) for deletion on the next system restart using the standard Windows `PendingFileRenameOperations` mechanism.
+- **Service Hardening:** Aggressively targets and removes background services like `AdskAccessService` and `AGSService` that often block uninstallation and cause file locks.
 - **Robust Pathing:** Automatically detects and utilizes $env:TEMP if C:\temp is unavailable, ensuring deployment reliability on locked-down systems.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
 - **Non-Destructive by Default:** Roaming profile data is renamed with a timestamped backup suffix rather than deleted, so user customizations can be restored.
@@ -81,7 +83,7 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
-**New in v2.4:** Enhanced remote target handling. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
+**New in v2.5:** Enhanced service hardening and a reboot deletion queue. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 
 ```powershell
 Start-SAC
