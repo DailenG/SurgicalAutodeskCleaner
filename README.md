@@ -94,7 +94,7 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
-**New in v2.6:** Active pending reboot checking and tasks/services teardown on abort. Restricts general temp clearing to Master Purge and implements a targeted, safety-focused Autodesk temp cleanup engine (preventing wildcard conflict deletions of unrelated system/app logs). Adds user profile root cache clearing (`ACCDocs`, `BIM 360`) and expands surgical cleaner support to cover `AutoCAD LT`, `Navisworks Simulate`, `Autodesk Docs`, `Forma Site Design`, `Fusion`, `Alias`, `Vault`, `Moldflow`, `Netfabb`, and `Autodesk Construction Cloud`.
+**New in v2.6.x:** Active pending reboot checking and tasks/services teardown on abort. Restricts general temp clearing to Master Purge and implements a targeted, safety-focused Autodesk temp cleanup engine (preventing wildcard conflict deletions of unrelated system/app logs). Adds user profile root cache clearing (`ACCDocs`, `BIM 360`) and expands surgical cleaner support to cover `AutoCAD LT`, `Navisworks Simulate`, `Autodesk Docs`, `Forma Site Design`, `Fusion`, `Alias`, `Vault`, `Moldflow`, `Netfabb`, and `Autodesk Construction Cloud`.
 
 **New in v2.5:** Enhanced service hardening and a reboot deletion queue. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 
@@ -112,8 +112,9 @@ Start-SAC
 | `[5]` Pre-Flight Scan | Simulate cleanup and export CSV report |
 | `[6]` Build Cleanup Script | Build an SAC script to run later |
 | `[7]` Restore User Profile | List and restore SAC backup folders |
+| `[8]` View All Products | List all detected Autodesk software |
+| `[L]` View Last Run Logs | Examine transcripts or attention items logs (Conditional) |
 | `[T]` Target Remote Machine | Switch the session to a remote WinRM target |
-| `[V]` View Attention Items | Open failure logs in Notepad (Conditional) |
 
 ---
 
