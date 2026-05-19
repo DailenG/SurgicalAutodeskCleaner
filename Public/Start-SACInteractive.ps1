@@ -701,7 +701,17 @@ $command
                     }
 
                     if ($content) {
-                        Invoke-SACSelection -Items $content -Title "Viewing: $selectedFile (Last 5000 lines)" -ViewerOnly
+                        $selected = Invoke-SACSelection -Items $content -Title "Viewing: $selectedFile (Last 5000 lines)" -ViewerOnly
+                        if ($selected) {
+                            try {
+                                $text = $selected -join "`r`n"
+                                $text | Set-Clipboard -ErrorAction Stop
+                                Write-Host "`n  [OK] $($selected.Count) log line(s) copied to clipboard." -ForegroundColor Green
+                            } catch {
+                                Write-Host "`n  [!] Failed to copy to clipboard (terminal/host restriction)." -ForegroundColor Yellow
+                            }
+                            Invoke-SACPause
+                        }
                     } else {
                         Write-Host "  Log file is empty or inaccessible." -ForegroundColor Yellow
                         Invoke-SACPause
@@ -714,6 +724,7 @@ $command
                 if ([string]::IsNullOrWhiteSpace($comp) -or $comp.Trim().ToLower() -eq "local") {
                     $script:SACTarget = [PSCustomObject]@{ ComputerName = "localhost"; Credential = $null; IsRemote = $false }
                     $needsRefresh = $true
+                    $script:SACLastRunStatus = $null
                     Write-Host "  Target successfully reset to LOCAL MACHINE." -ForegroundColor Green
                     Start-Sleep -Seconds 1
                 } else {
@@ -726,6 +737,7 @@ $command
                             IsRemote = ($res.ComputerName -ne "localhost") 
                         }
                         $needsRefresh = $true
+                        $script:SACLastRunStatus = $null
                         Write-Host "  Target successfully set to REMOTE: $($res.ComputerName)." -ForegroundColor Green
                         Start-Sleep -Seconds 1
                     } else {
