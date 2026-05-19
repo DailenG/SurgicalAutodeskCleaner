@@ -43,6 +43,17 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 
 ---
 
+## Supported Products
+
+The surgical cleanup and profile reset tools explicitly target and support the following Autodesk suites and products out-of-the-box:
+- **Core Design & Draft**: AutoCAD, AutoCAD LT
+- **BIM & Infrastructure**: Revit, Civil 3D, InfraWorks, Forma Site Design, Advance Steel
+- **Engineering & Simulation**: Inventor, Fusion, Alias, Moldflow, Netfabb
+- **Collaboration & Data Management**: Autodesk Docs, Autodesk Construction Cloud (ACC), Vault Professional Client, Vault Basic Client, Vault
+- **Visual & Reality Capture**: 3ds Max, Maya, ReCap, Autodesk Material Library
+
+---
+
 ## Requirements
 
 - **Operating System:** Windows 10/11 or Windows Server 2016+
