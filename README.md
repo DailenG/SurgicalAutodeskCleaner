@@ -83,6 +83,8 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
+**New in v2.6:** Active pending reboot checking and tasks/services teardown on abort. Restricts general temp clearing to Master Purge and implements a targeted, safety-focused Autodesk temp cleanup engine (preventing wildcard conflict deletions of unrelated system/app logs). Adds user profile root cache clearing (`ACCDocs`, `BIM 360`) and expands surgical cleaner support to cover `AutoCAD LT`, `Navisworks Simulate`, `Autodesk Docs`, `Forma Site Design`, `Fusion`, `Alias`, `Vault`, `Moldflow`, `Netfabb`, and `Autodesk Construction Cloud`.
+
 **New in v2.5:** Enhanced service hardening and a reboot deletion queue. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 
 ```powershell

@@ -316,8 +316,9 @@ function Start-SACInteractive {
                 param($prods, $years)
                 $SafePathsToSearch = @(
                     "$($env:ProgramFiles)\Autodesk","$(${env:ProgramFiles(x86)})\Autodesk",
-                    "$($env:ProgramData)\Autodesk","$($env:PUBLIC)\Documents\Autodesk",
-                    "C:\Users\*\AppData\Local\Autodesk","C:\Users\*\AppData\Roaming\Autodesk"
+                    "$($env:ProgramData)\Autodesk","$($env:ProgramData)",
+                    "$($env:PUBLIC)\Documents\Autodesk",
+                    "C:\Users\*\AppData\Local","C:\Users\*\AppData\Roaming"
                 )
                 $results = @()
                 foreach ($product in $prods) {
@@ -483,7 +484,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.5.0-beta"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.6.0"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"

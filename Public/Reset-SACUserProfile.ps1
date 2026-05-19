@@ -102,60 +102,133 @@ function Reset-SACUserProfile {
         Write-SACMsg "Processing user: $userName" "Info"
 
         # --- LOCAL (delete outright) ---
-        $LocalBase = Join-Path $profile.FullName "AppData\Local\Autodesk"
-        if (Test-Path $LocalBase) {
-            $LocalTargets = Get-ChildItem -Path $LocalBase -Directory -ErrorAction SilentlyContinue | Where-Object {
-                $dirName = $_.Name
-                $productOk = (@($TargetProducts).Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
-                $yearOk    = (@($TargetYears).Count -eq 0)    -or ($TargetYears   | Where-Object { $dirName -match $_ })
-                return ($productOk -and $yearOk)
+        $LocalPathsToCheck = @()
+        $LocalSearchPaths = @(
+            "AppData\Local\Autodesk",
+            "AppData\Local\Autodesk Navisworks",
+            "AppData\Local\Autodesk,_Inc",
+            "AppData\Local\Autodesk Inc",
+            "AppData\Local\Autodesk Installer",
+            "AppData\Local\Autodesk Ltd",
+            "AppData\Local\AdSSO",
+            "AppData\Local\Civil3DFeatures"
+        )
+        foreach ($sp in $LocalSearchPaths) {
+            $fullPath = Join-Path $profile.FullName $sp
+            if (Test-Path $fullPath) {
+                $LocalPathsToCheck += Get-Item $fullPath
+                $LocalPathsToCheck += Get-ChildItem -Path $fullPath -Directory -ErrorAction SilentlyContinue
             }
+        }
 
-            foreach ($dir in $LocalTargets) {
-                try {
-                    Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
-                    Write-SACMsg "[$userName] Deleted Local cache: $($dir.Name)" "Success"
-                    $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="OK" }
-                } catch {
-                    Write-SACQuietLog "Failed to delete $($dir.FullName): $($_.Exception.Message)"
-                    $script:SACFailures += [PSCustomObject]@{ Component="Local Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
-                    $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="FAILED" }
+        $LocalTargets = $LocalPathsToCheck | Select-Object -Unique | Where-Object {
+            $dirName = $_.Name
+            $isGlobal = $dirName -in @("Autodesk,_Inc", "Autodesk Inc", "Autodesk Installer", "Autodesk Ltd", "AdSSO")
+            if ($isGlobal) {
+                return (@($TargetProducts).Count -eq 0 -and @($TargetYears).Count -eq 0)
+            }
+            $productOk = (@($TargetProducts).Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
+            $hasYearInName = ($dirName -match '\b20\d{2}\b')
+            $yearOk = if ($hasYearInName) {
+                (@($TargetYears).Count -eq 0) -or ($TargetYears | Where-Object { $dirName -match $_ })
+            } else {
+                (@($TargetYears).Count -eq 0)
+            }
+            return ($productOk -and $yearOk)
+        }
+
+        foreach ($dir in $LocalTargets) {
+            try {
+                Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
+                Write-SACMsg "[$userName] Deleted Local cache: $($dir.Name)" "Success"
+                $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="OK" }
+            } catch {
+                Write-SACQuietLog "Failed to delete $($dir.FullName): $($_.Exception.Message)"
+                $script:SACFailures += [PSCustomObject]@{ Component="Local Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
+                $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Local)"; Path=$dir.FullName; Result="FAILED" }
+            }
+        }
+
+        # --- Root Profile Caches (e.g. Autodesk Docs & ACC) ---
+        $RootCaches = @(
+            @{ Name = "ACCDocs"; MatchProducts = @("Autodesk Docs", "Autodesk Construction Cloud", "ACC") },
+            @{ Name = "BIM 360"; MatchProducts = @("Autodesk Docs", "Autodesk Construction Cloud", "ACC", "BIM 360") }
+        )
+        foreach ($rc in $RootCaches) {
+            $rcPath = Join-Path $profile.FullName $rc.Name
+            if (Test-Path $rcPath) {
+                $shouldDelete = (@($TargetProducts).Count -eq 0) -or ($TargetProducts | Where-Object { $prod = $_; $rc.MatchProducts | Where-Object { $prod -match [regex]::Escape($_) } })
+                if ($shouldDelete) {
+                    try {
+                        Remove-Item $rcPath -Recurse -Force -ErrorAction Stop
+                        Write-SACMsg "[$userName] Deleted Root Cache: $($rc.Name)" "Success"
+                        $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Root Cache)"; Path=$rcPath; Result="OK" }
+                    } catch {
+                        Write-SACQuietLog "Failed to delete root cache $($rcPath): $($_.Exception.Message)"
+                        $script:SACFailures += [PSCustomObject]@{ Component="Root Cache Delete: $rcPath"; Reason=$_.Exception.Message }
+                        $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Root Cache)"; Path=$rcPath; Result="FAILED" }
+                    }
                 }
             }
         }
 
         # --- ROAMING (rename or delete) ---
-        $RoamingBase = Join-Path $profile.FullName "AppData\Roaming\Autodesk"
-        if (Test-Path $RoamingBase) {
-            $RoamingTargets = Get-ChildItem -Path $RoamingBase -Directory -ErrorAction SilentlyContinue | Where-Object {
-                $dirName   = $_.Name
-                $productOk = ($TargetProducts.Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
-                $yearOk    = ($TargetYears.Count -eq 0)    -or ($TargetYears   | Where-Object { $dirName -match $_ })
-                return ($productOk -and $yearOk)
+        $RoamingPathsToCheck = @()
+        $RoamingSearchPaths = @(
+            "AppData\Roaming\Autodesk",
+            "AppData\Roaming\Autodesk Navisworks",
+            "AppData\Roaming\Autodesk,_Inc",
+            "AppData\Roaming\Autodesk Inc",
+            "AppData\Roaming\Autodesk Installer",
+            "AppData\Roaming\Autodesk Ltd",
+            "AppData\Roaming\AdSSO",
+            "AppData\Roaming\Civil3DFeatures"
+        )
+        foreach ($sp in $RoamingSearchPaths) {
+            $fullPath = Join-Path $profile.FullName $sp
+            if (Test-Path $fullPath) {
+                $RoamingPathsToCheck += Get-Item $fullPath
+                $RoamingPathsToCheck += Get-ChildItem -Path $fullPath -Directory -ErrorAction SilentlyContinue
             }
+        }
 
-            foreach ($dir in $RoamingTargets) {
-                if ($DeleteRoaming) {
-                    try {
-                        Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
-                        Write-SACMsg "[$userName] Deleted Roaming profile: $($dir.Name)" "Success"
-                        $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="OK" }
-                    } catch {
-                        Write-SACQuietLog "Failed to delete roaming $($dir.FullName): $($_.Exception.Message)"
-                        $script:SACFailures += [PSCustomObject]@{ Component="Roaming Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
-                        $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="FAILED" }
-                    }
-                } else {
-                    $newName = "$($dir.FullName)$BackupSuffix"
-                    try {
-                        Rename-Item -Path $dir.FullName -NewName $newName -ErrorAction Stop
-                        Write-SACMsg "[$userName] Backed up Roaming profile: $($dir.Name) -> $($dir.Name)$BackupSuffix" "Success"
-                        $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$newName; Result="OK" }
-                    } catch {
-                        Write-SACQuietLog "Failed to rename roaming $($dir.FullName): $($_.Exception.Message)"
-                        $script:SACFailures += [PSCustomObject]@{ Component="Roaming Rename: $($dir.FullName)"; Reason=$_.Exception.Message }
-                        $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$dir.FullName; Result="FAILED" }
-                    }
+        $RoamingTargets = $RoamingPathsToCheck | Select-Object -Unique | Where-Object {
+            $dirName = $_.Name
+            $isGlobal = $dirName -in @("Autodesk,_Inc", "Autodesk Inc", "Autodesk Installer", "Autodesk Ltd", "AdSSO")
+            if ($isGlobal) {
+                return (@($TargetProducts).Count -eq 0 -and @($TargetYears).Count -eq 0)
+            }
+            $productOk = (@($TargetProducts).Count -eq 0) -or ($TargetProducts | Where-Object { $dirName -match [regex]::Escape($_) })
+            $hasYearInName = ($dirName -match '\b20\d{2}\b')
+            $yearOk = if ($hasYearInName) {
+                (@($TargetYears).Count -eq 0) -or ($TargetYears | Where-Object { $dirName -match $_ })
+            } else {
+                (@($TargetYears).Count -eq 0)
+            }
+            return ($productOk -and $yearOk)
+        }
+
+        foreach ($dir in $RoamingTargets) {
+            if ($DeleteRoaming) {
+                try {
+                    Remove-Item $dir.FullName -Recurse -Force -ErrorAction Stop
+                    Write-SACMsg "[$userName] Deleted Roaming profile: $($dir.Name)" "Success"
+                    $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="OK" }
+                } catch {
+                    Write-SACQuietLog "Failed to delete roaming $($dir.FullName): $($_.Exception.Message)"
+                    $script:SACFailures += [PSCustomObject]@{ Component="Roaming Delete: $($dir.FullName)"; Reason=$_.Exception.Message }
+                    $Summary += [PSCustomObject]@{ User=$userName; Action="Deleted (Roaming)"; Path=$dir.FullName; Result="FAILED" }
+                }
+            } else {
+                $newName = "$($dir.FullName)$BackupSuffix"
+                try {
+                    Rename-Item -Path $dir.FullName -NewName $newName -ErrorAction Stop
+                    Write-SACMsg "[$userName] Backed up Roaming profile: $($dir.Name) -> $($dir.Name)$BackupSuffix" "Success"
+                    $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$newName; Result="OK" }
+                } catch {
+                    Write-SACQuietLog "Failed to rename roaming $($dir.FullName): $($_.Exception.Message)"
+                    $script:SACFailures += [PSCustomObject]@{ Component="Roaming Rename: $($dir.FullName)"; Reason=$_.Exception.Message }
+                    $Summary += [PSCustomObject]@{ User=$userName; Action="Renamed (Roaming Backup)"; Path=$dir.FullName; Result="FAILED" }
                 }
             }
         }

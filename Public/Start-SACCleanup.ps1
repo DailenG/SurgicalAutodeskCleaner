@@ -69,6 +69,7 @@ function Start-SACCleanup {
     param (
         [string[]]$TargetProducts = @(
             "AutoCAD", 
+            "AutoCAD LT",
             "Revit", 
             "Advance Steel", 
             "Autodesk Material Library", 
@@ -76,11 +77,22 @@ function Start-SACCleanup {
             "Inventor",
             "Navisworks Manage",
             "Navisworks Freedom",
+            "Navisworks Simulate",
             "ReCap",
             "3ds Max",
             "Maya",
             "Vault Professional Client",
-            "Vault Basic Client"
+            "Vault Basic Client",
+            "Vault",
+            "InfraWorks",
+            "Forma Site Design",
+            "Autodesk Docs",
+            "Fusion",
+            "Alias",
+            "Moldflow",
+            "Modlflow",
+            "Netfabb",
+            "Autodesk Construction Cloud"
         ),
         [int[]]$TargetYears = (2015..2023),
         [string[]]$AdditionalVendors = @(),
@@ -91,8 +103,7 @@ function Start-SACCleanup {
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $script:SACFailures = @()
 
-    # Processes that are safe to kill if an older version is hanging (excluding shared system services/tray apps)
-    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*")
+    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
 
     # --- Logging Setup ---
     $ToDate = (Get-Date -Format 'yyyyMMdd_HHmmss')
@@ -114,7 +125,10 @@ function Start-SACCleanup {
             "$($env:ProgramFiles)\Autodesk",
             "$(${env:ProgramFiles(x86)})\Autodesk",
             "$($env:ProgramData)\Autodesk",
-            "$($env:PUBLIC)\Documents\Autodesk"
+            "$($env:ProgramData)",
+            "$($env:PUBLIC)\Documents\Autodesk",
+            "C:\Users\*\AppData\Local",
+            "C:\Users\*\AppData\Roaming"
         )
 
         $SearchPattern = "*$($ProductName)*$($Version)*"
@@ -481,6 +495,17 @@ function Start-SACCleanup {
     Write-SACMsg "==========================================" "Info"
 
     if (Test-SACInteractive -Silent $Silent) {
+        $PendingReboot = Test-SACPendingReboot
+        if ($PendingReboot) {
+            Write-Host "[!] WARNING: A pending reboot is detected on this system." -ForegroundColor Yellow
+            $ProceedCleanup = Read-Host "Would you like to proceed with the Cleanup anyway? (y/N)"
+            if ($ProceedCleanup.Trim().ToLower() -ne 'y') {
+                Write-SACMsg "Execution aborted by user." "Warning"
+                Stop-Transcript | Out-Null
+                return
+            }
+        }
+
         Write-Host "`nTarget Products: $($TargetProducts -join ', ')" -ForegroundColor Cyan
         Write-Host "Target Years: $($TargetYears -join ', ')`n" -ForegroundColor Cyan
         Write-Host "WARNING: This will forcefully remove the specified versions.`n" -ForegroundColor Yellow
@@ -493,6 +518,9 @@ function Start-SACCleanup {
     }
     else {
         Write-SACMsg "Running in non-interactive/silent mode." "Info"
+        if (Test-SACPendingReboot) {
+            Write-SACMsg "WARNING: A pending system reboot has been detected." "Warning"
+        }
     }
 
     Write-SACMsg "Processing $($TargetProducts.Count) product(s) across $($TargetYears.Count) year(s)..." "Info"
@@ -501,6 +529,9 @@ function Start-SACCleanup {
             Invoke-UninstallAutodeskProduct -ProductName $product -Version $year.ToString()
         }
     }
+
+    # Wipe specific Autodesk temp files and directories
+    Invoke-SACTempAutodeskCleanup
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed

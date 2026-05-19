@@ -15,6 +15,7 @@ function Start-SACPurge {
     param (
         [string[]]$AdditionalVendors = @(),
         [switch]$AnyVendor,
+        [switch]$ClearTemp,
         [switch]$Silent
     )
 
@@ -29,19 +30,41 @@ function Start-SACPurge {
         @{Name = "Autodesk"; Versions = @("*") }
     )
 
-    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "*AdAppMgr*", "*AdODIS*", "*Autodesk*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*")
+    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "*AdAppMgr*", "*AdODIS*", "*Autodesk*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
 
     $DataLocations = @(
         "$($env:ProgramData)\Autodesk",
+        "C:\ProgramData\Autodesk Navisworks Freedom *",
         "$($env:PUBLIC)\Documents\Autodesk",
         "C:\Users\*\AppData\Local\Autodesk",
+        "C:\Users\*\AppData\Local\Autodesk Navisworks",
+        "C:\Users\*\AppData\Local\Autodesk,_Inc",
+        "C:\Users\*\AppData\Local\Autodesk Inc",
+        "C:\Users\*\AppData\Local\Autodesk Installer",
+        "C:\Users\*\AppData\Local\Autodesk Ltd",
+        "C:\Users\*\AppData\Local\Autodesk Navisworks Freedom *",
+        "C:\Users\*\AppData\Local\AdSSO",
+        "C:\Users\*\AppData\Local\Civil3DFeatures",
         "C:\Users\*\AppData\Roaming\Autodesk",
+        "C:\Users\*\AppData\Roaming\Autodesk Navisworks",
+        "C:\Users\*\AppData\Roaming\Autodesk,_Inc",
+        "C:\Users\*\AppData\Roaming\Autodesk Inc",
+        "C:\Users\*\AppData\Roaming\Autodesk Installer",
+        "C:\Users\*\AppData\Roaming\Autodesk Ltd",
+        "C:\Users\*\AppData\Roaming\Autodesk Navisworks Freedom *",
+        "C:\Users\*\AppData\Roaming\AdSSO",
+        "C:\Users\*\AppData\Roaming\Civil3DFeatures",
         "C:\Users\*\AppData\Local\Temp\Autodesk",
         "$($env:ProgramFiles)\Autodesk",
         "$($env:CommonProgramFiles)\Autodesk Shared",
+        "$($env:CommonProgramFiles)\Autodesk",
         "$(${env:ProgramFiles(x86)})\Autodesk",
         "$(${env:CommonProgramFiles(x86)})\Autodesk Shared",
-        "C:\Autodesk"
+        "$(${env:CommonProgramFiles(x86)})\Autodesk",
+        "C:\Autodesk",
+        "C:\Windows\Temp\AdAppMgrUpdater",
+        "C:\Users\*\ACCDocs",
+        "C:\Users\*\BIM 360"
     )
 
     $RegistryLocations = @(
@@ -513,6 +536,32 @@ function Start-SACPurge {
     Write-SACMsg "==========================================" "Info"
 
     if (Test-SACInteractive -Silent $Silent) {
+        $PendingReboot = Test-SACPendingReboot
+        if ($PendingReboot) {
+            Write-Host "[!] WARNING: A pending reboot is detected on this system." -ForegroundColor Yellow
+            $ProceedPurge = Read-Host "Would you like to proceed with the Master Purge anyway? (y/N)"
+            if ($ProceedPurge.Trim().ToLower() -ne 'y') {
+                $RebootPrep = Read-Host "Are you planning to reboot, and would you like to disable or remove any applicable scheduled tasks and services first? (y/N)"
+                if ($RebootPrep.Trim().ToLower() -eq 'y') {
+                    Write-SACMsg "Disabling and removing Autodesk scheduled tasks and services before reboot..." "Warning"
+                    Stop-AndRemoveService -ServiceName "Autodesk"
+                    Stop-AndRemoveService -ServiceName "Adsk"
+                    Stop-AndRemoveService -ServiceName "ODIS"
+                    Stop-AndRemoveService -ServiceName "AdskAccessService"
+                    Stop-AndRemoveService -ServiceName "AGS"
+                    Stop-AndRemoveService -ServiceName "Genuine"
+                    
+                    Get-ScheduledTask -TaskPath "\Autodesk\*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
+                    Get-ScheduledTask -TaskName "*Autodesk*" -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue
+                    Write-SACMsg "Autodesk scheduled tasks and services disabled/removed. Please reboot the machine and re-run the tool." "Success"
+                } else {
+                    Write-SACMsg "Execution aborted. No changes made." "Warning"
+                }
+                Stop-Transcript | Out-Null
+                return
+            }
+        }
+
         Write-Host "`nWARNING: This will forcefully terminate and remove all Autodesk applications.`n" -ForegroundColor Yellow
         $Response = Read-Host "Type 'YES' to proceed"
         if ($Response -ne "YES") { 
@@ -520,9 +569,21 @@ function Start-SACPurge {
             Stop-Transcript | Out-Null
             return 
         }
+
+        $ClearTempChoice = $ClearTemp
+        if (-not $ClearTemp) {
+            $TempResp = Read-Host "Would you like to clear all files in the Temp folders (user temp and Windows temp)? (y/N)"
+            if ($TempResp.Trim().ToLower() -eq 'y') {
+                $ClearTempChoice = $true
+            }
+        }
     }
     else {
         Write-SACMsg "Running in non-interactive/silent mode." "Info"
+        if (Test-SACPendingReboot) {
+            Write-SACMsg "WARNING: A pending system reboot has been detected." "Warning"
+        }
+        $ClearTempChoice = $ClearTemp
     }
 
     foreach ($product in $RemoveVersions) {
@@ -617,6 +678,14 @@ function Start-SACPurge {
     }
 
     Invoke-SACShortcutPurge
+
+    # Wipe specific Autodesk temp files and directories
+    Invoke-SACTempAutodeskCleanup
+
+    # Optionally clear the entire Temp folders (user and Windows Temp)
+    if ($ClearTempChoice) {
+        Clear-SACTempFolders
+    }
 
     $StopWatch.Stop()
     $ElapsedTime = "{0:mm} min {0:ss} sec" -f $StopWatch.Elapsed
