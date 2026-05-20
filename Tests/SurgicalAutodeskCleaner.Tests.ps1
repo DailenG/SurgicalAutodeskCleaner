@@ -1,4 +1,4 @@
-﻿BeforeAll {
+BeforeAll {
     $ModulePath = Resolve-Path "$PSScriptRoot\..\SurgicalAutodeskCleaner.psd1"
 }
 
@@ -9,7 +9,7 @@ Describe "SurgicalAutodeskCleaner Module validation" {
         $Manifest | Should -Not -BeNullOrEmpty
     }
 
-    It "Should export Start-SACCleanup, Start-SACPurge, and Start-SACInteractive" {
+    It "Should export Start-SACCleanup, Start-SACPurge, Start-SACInteractive, and Repair-SACODIS" {
         $Module = Import-Module -Name $ModulePath -PassThru -Force
         $ExportedCommands = $Module.ExportedCommands.Keys
         
@@ -17,6 +17,7 @@ Describe "SurgicalAutodeskCleaner Module validation" {
         $ExportedCommands | Should -Contain "Start-SACPurge"
         $ExportedCommands | Should -Contain "Start-SACInteractive"
         $ExportedCommands | Should -Contain "Start-SACScan"
+        $ExportedCommands | Should -Contain "Repair-SACODIS"
     }
 
     It "Should export the Start-SAC alias" {

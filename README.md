@@ -113,6 +113,7 @@ Start-SAC
 | `[6]` Build Cleanup Script | Build an SAC script to run later |
 | `[7]` Restore User Profile | List and restore SAC backup folders |
 | `[8]` View All Products | List all detected Autodesk software |
+| `[9]` Repair ODIS Installer | Uninstall, clean directory states, download & reinstall ODIS |
 | `[L]` View Last Run Logs | Examine transcripts or attention items logs (Conditional) |
 | `[T]` Target Remote Machine | Switch the session to a remote WinRM target |
 
@@ -263,6 +264,33 @@ Restore-SACUserProfile -Restore -BackupPath "C:\Users\jsmith\AppData\Roaming\Aut
 # Remove all backups to free disk space
 Restore-SACUserProfile -Purge -Silent
 ```
+
+---
+
+### 8. `Repair-SACODIS`
+
+Uninstalls, cleans/renames corrupt directory states, downloads the latest version, and silently reinstalls the Autodesk On-Demand Install Service (ODIS). Resolves installation errors such as *"Unable to install - An error occurred while preparing the installation."*
+
+**What it does:**
+1. Terminates any active ODIS processes (`AdODIS.exe`, `AdODISService.exe`, `AdODISInstaller.exe`).
+2. Invokes the native uninstaller (`RemoveODIS.exe --mode unattended`) if present.
+3. Stops and deletes the `AdODISService`.
+4. Renames existing ODIS data folders (appending `_bak_<timestamp>`) to prevent corrupt state reuse while preserving old installer logs.
+5. Downloads the latest ODIS installation binary from Autodesk's servers.
+6. Silent-reinstalls ODIS via `--mode unattended` and verifies successful deployment.
+
+```powershell
+# Standard ODIS repair (interactive prompt)
+Repair-SACODIS
+
+# Silent ODIS repair for RMM deployment
+Repair-SACODIS -Silent
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|---|---|---|
+| `-Silent` | `switch` | Bypasses the confirmation prompt. |
 
 ---
 

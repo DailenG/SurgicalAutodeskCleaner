@@ -484,7 +484,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.7.1"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.8.0"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -535,6 +535,7 @@ $command
         Write-BoxLine -Text "  [6]  Build Cleanup Script   Build an SAC script to run later"
         Write-BoxLine -Text "  [7]  Restore User Profile   List/restore SAC backup folders"
         Write-BoxLine -Text "  [8]  View All Products      List all detected Autodesk software"
+        Write-BoxLine -Text "  [9]  Repair ODIS Installer  Uninstall, clean/rename, & reinstall ODIS"
         if ($script:SACLastRunStatus.LogDir) {
             $vColor = if ($script:SACLastRunStatus.Criticals -gt 0) { "Red" } else { "Yellow" }
             Write-BoxLine -Text "  [L]  View Last Run Logs     Examine transcript or attention items" -Color $vColor
@@ -650,6 +651,17 @@ $command
                         Write-Host "`n  [!] Failed to copy to clipboard (terminal/host restriction)." -ForegroundColor Yellow
                     }
                 }
+                Invoke-SACPause
+            }
+
+            "9" {
+                if ($script:SACTarget.IsRemote) {
+                    Write-Host "`n  Dispatching ODIS Installer Repair to $($script:SACTarget.ComputerName)..." -ForegroundColor Cyan
+                    $script:SACLastRunStatus = Invoke-SACRemote -ComputerName $script:SACTarget.ComputerName -Credential $script:SACTarget.Credential -Command "Repair-SACODIS -Silent" -AutoInstall
+                } else {
+                    $script:SACLastRunStatus = Repair-SACODIS
+                }
+                $needsRefresh = $true
                 Invoke-SACPause
             }
 

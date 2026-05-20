@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion = '2.7.1'
+    ModuleVersion = '2.8.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -43,6 +43,7 @@ Features:
 - Reset-SACLicensing: Wipes CLM, AdskLicensing, and SSO token cache to force clean re-authentication.
 - Restore-SACUserProfile: Lists, restores, or purges Roaming profile backups created by Reset-SACUserProfile.
 - Invoke-SACRemote: Dispatches SAC tasks to remote endpoints via WinRM.
+- Repair-SACODIS: Uninstalls, cleans/renames directory states, downloads the latest version, and silently reinstalls Autodesk On-Demand Install Service (ODIS) to fix installer failures.
 
 Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
 
@@ -85,7 +86,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
     # NestedModules = @()
 
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan', 'Reset-SACUserProfile', 'Reset-SACLicensing', 'Restore-SACUserProfile', 'Invoke-SACRemote'
+    FunctionsToExport = 'Start-SACCleanup', 'Start-SACPurge', 'Start-SACInteractive', 'Start-SACScan', 'Reset-SACUserProfile', 'Reset-SACLicensing', 'Restore-SACUserProfile', 'Invoke-SACRemote', 'Repair-SACODIS'
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
     CmdletsToExport   = '*'
