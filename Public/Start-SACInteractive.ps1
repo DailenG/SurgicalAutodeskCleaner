@@ -484,7 +484,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.7.0"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.7.1"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
@@ -667,13 +667,13 @@ $command
                 if ($script:SACTarget.IsRemote) {
                     $cmdParams = @{
                         ComputerName = $script:SACTarget.ComputerName
-                        ScriptBlock  = { Get-ChildItem -Path $using:logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name }
+                        ScriptBlock  = { Get-ChildItem -LiteralPath $using:logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name }
                         ErrorAction  = "SilentlyContinue"
                     }
                     if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
                     $files = Invoke-Command @cmdParams
                 } else {
-                    $files = Get-ChildItem -Path $logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                    $files = Get-ChildItem -LiteralPath $logDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
                 }
 
                 if (-not $files) {
@@ -691,13 +691,13 @@ $command
                     if ($script:SACTarget.IsRemote) {
                         $cmdParams = @{
                             ComputerName = $script:SACTarget.ComputerName
-                            ScriptBlock  = { Get-Content -Path $using:filePath -Tail 5000 -ErrorAction SilentlyContinue }
+                            ScriptBlock  = { Get-Content -LiteralPath $using:filePath -Tail 5000 -ErrorAction SilentlyContinue }
                             ErrorAction  = "SilentlyContinue"
                         }
                         if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
                         $content = Invoke-Command @cmdParams
                     } else {
-                        $content = Get-Content -Path $filePath -Tail 5000 -ErrorAction SilentlyContinue
+                        $content = Get-Content -LiteralPath $filePath -Tail 5000 -ErrorAction SilentlyContinue
                     }
 
                     if ($content) {
