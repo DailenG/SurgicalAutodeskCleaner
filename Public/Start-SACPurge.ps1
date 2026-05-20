@@ -21,6 +21,7 @@ function Start-SACPurge {
 
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $script:SACFailures = @()
+    $script:SACLockedItemsList = [System.Collections.Generic.List[string]]::new()
 
     # --- Configuration Arrays ---
     $RemoveVersions = @(
@@ -322,7 +323,7 @@ function Start-SACPurge {
                         $dn = $_.GetValue("DisplayName")
                         $pb = $_.GetValue("Publisher")
                         
-                        if ($null -ne $dn -and $dn -like $PackageName) {
+                        if ($null -ne $dn -and ($dn -like $PackageName -or ($ProductName -eq "Autodesk" -and $null -ne $pb -and $pb -match "Autodesk"))) {
                             if ($AnyVendor -or ($null -ne $pb -and $pb -match $vendorPattern) -or ($dn -match $vendorPattern)) {
                                 $UninstallKeys += [PSCustomObject]@{
                                     DisplayName          = $dn
@@ -670,6 +671,11 @@ function Start-SACPurge {
                 if ($purgeResult.LockedItems.Count -gt 0) {
                     Write-SACMsg "  Queuing $($purgeResult.LockedItems.Count) locked item(s) for deletion on reboot." "Warning"
                     Invoke-SACPendingDelete -Paths $purgeResult.LockedItems
+                    foreach ($item in $purgeResult.LockedItems) {
+                        if (-not $script:SACLockedItemsList.Contains($item)) {
+                            $script:SACLockedItemsList.Add($item)
+                        }
+                    }
                 }
             } else {
                 Write-SACMsg "Purged directory: $fp" "Success"
@@ -703,6 +709,22 @@ function Start-SACPurge {
         Write-Host "`nPlease review the Debug Log for deeper diagnostics or resolve locks manually.`n" -ForegroundColor Red
     } else {
         Write-Host "`n[*] All operations completed successfully with no critical failures.`n" -ForegroundColor Green
+    }
+
+    # Prompt if there were locked files/folders and we are not running silently
+    if ($script:SACLockedItemsList.Count -gt 0 -and -not $Silent) {
+        Write-Host "`n[!] There were $($script:SACLockedItemsList.Count) files/directories locked or in-use." -ForegroundColor Yellow
+        $resp = Read-Host "    Would you like to schedule them for removal on the next restart? (y/N)"
+        if ($resp.Trim().ToLower() -eq 'y') {
+            Write-Host "`n    Scheduling post-reboot cleanup..." -ForegroundColor Cyan
+            $registered = Register-SACPostRebootCleanup -Paths $script:SACLockedItemsList.ToArray()
+            if ($registered) {
+                Write-Host "    [OK] Post-reboot cleanup registered successfully. It will run silently on next logon." -ForegroundColor Green
+            } else {
+                Write-Host "    [!] Failed to register post-reboot cleanup." -ForegroundColor Red
+            }
+            Start-Sleep -Seconds 2
+        }
     }
 
     # Persist outcome so the interactive menu can show a status badge on return

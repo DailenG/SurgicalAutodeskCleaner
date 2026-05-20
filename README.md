@@ -34,7 +34,7 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 - **Targeted Removal:** Uninstalls specific applications for specific years without touching shared services.
 - **Fail-Safe Mechanism:** Verifies vendor and product names against strict patterns to prevent accidental removal of non-Autodesk tools.
 - **Deep Cleansing:** Purges orphaned installation directories using an enterprise-grade `robocopy /MIR` engine to bypass PowerShell's `MAX_PATH` limits, and destroys cyclical registry keys using native OS methods (`reg.exe`) to prevent StackOverflow exceptions.
-- **Reboot Deletion Queue:** Automatically queues locked files (like the stubborn Genuine Service DLLs) for deletion on the next system restart using the standard Windows `PendingFileRenameOperations` mechanism.
+- **Reboot Deletion Queue:** Automatically queues locked files (like the stubborn Genuine Service DLLs) for deletion on the next system restart using the standard Windows `PendingFileRenameOperations` mechanism. If any files or folders remain locked/in-use at the end of a Master Purge, SAC will prompt to schedule them for a silent post-reboot cleanup task via the `RunOnce` registry key, which automatically removes them on the next logon and pops up a status log for user review.
 - **Service Hardening:** Aggressively targets and removes background services like `AdskAccessService` and `AGSService` that often block uninstallation and cause file locks.
 - **Robust Pathing:** Automatically detects and utilizes $env:TEMP if C:\temp is unavailable, ensuring deployment reliability on locked-down systems.
 - **Profile & Licensing Utilities:** Resets per-user AppData and Autodesk licensing tokens to resolve post-install issues without a full reinstall.
@@ -46,8 +46,8 @@ Autodesk products often leave behind deeply nested registry keys, orphaned backg
 ## Supported Products
 
 The surgical cleanup and profile reset tools explicitly target and support the following Autodesk suites and products out-of-the-box:
-- **Core Design & Draft**: AutoCAD, AutoCAD LT
-- **BIM & Infrastructure**: Revit, Civil 3D, InfraWorks, Forma Site Design, Advance Steel
+- **Core Design & Draft**: AutoCAD, AutoCAD LT, DWG TrueView
+- **BIM & Infrastructure**: Revit, Civil 3D, InfraWorks, Forma Site Design, Advance Steel, SketchUp Import
 - **Engineering & Simulation**: Inventor, Fusion, Alias, Moldflow, Netfabb
 - **Collaboration & Data Management**: Autodesk Docs, Autodesk Construction Cloud (ACC), Vault Professional Client, Vault Basic Client, Vault
 - **Visual & Reality Capture**: 3ds Max, Maya, ReCap, Autodesk Material Library
@@ -94,7 +94,7 @@ Reset-SACLicensing -Silent
 
 The interactive entry point. Launches a full-screen TUI main menu that surfaces all SAC tools in one place. Automatically scans the registry and displays detected Autodesk products in the header.
 
-**New in v2.6.x:** Active pending reboot checking and tasks/services teardown on abort. Restricts general temp clearing to Master Purge and implements a targeted, safety-focused Autodesk temp cleanup engine (preventing wildcard conflict deletions of unrelated system/app logs). Adds user profile root cache clearing (`ACCDocs`, `BIM 360`) and expands surgical cleaner support to cover `AutoCAD LT`, `Navisworks Simulate`, `Autodesk Docs`, `Forma Site Design`, `Fusion`, `Alias`, `Vault`, `Moldflow`, `Netfabb`, and `Autodesk Construction Cloud`.
+**New in v2.7.x:** Post-purge interactive prompts to schedule remaining locked files/folders for silent removal on the next reboot via the RunOnce registry key (with automatic log viewing on next user login). Adds DWG TrueView and SketchUp Import to targeted product detection and uninstallation matching. Includes active pending reboot checking, tasks/services teardown on abort, targeted safety-focused Autodesk temp clearing, user profile root cache clearing (`ACCDocs`, `BIM 360`), and expanded surgical cleaner support for AutoCAD LT, Navisworks Simulate, Autodesk Docs, Forma Site Design, Fusion, Alias, Vault, Moldflow, Netfabb, and Autodesk Construction Cloud.
 
 **New in v2.5:** Enhanced service hardening and a reboot deletion queue. Press `[T]` to target a remote machine. The entire TUI (Registry scans, Cleanup selection, Purge dispatch) will then operate against that remote endpoint over WinRM.
 

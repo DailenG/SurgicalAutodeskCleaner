@@ -70,6 +70,7 @@ function Start-SACCleanup {
         [string[]]$TargetProducts = @(
             "AutoCAD", 
             "AutoCAD LT",
+            "DWG TrueView",
             "Revit", 
             "Advance Steel", 
             "Autodesk Material Library", 
@@ -92,7 +93,8 @@ function Start-SACCleanup {
             "Moldflow",
             "Modlflow",
             "Netfabb",
-            "Autodesk Construction Cloud"
+            "Autodesk Construction Cloud",
+            "SketchUp Import"
         ),
         [int[]]$TargetYears = (2015..2023),
         [string[]]$AdditionalVendors = @(),
