@@ -63,15 +63,17 @@ function Repair-SACODIS {
     Write-SACMsg "Beginning Autodesk ODIS Repair Flow..." "Info"
     Write-SACMsg "Log directory initialized at: $LogDir" "Info"
 
-    # 1. Kill active ODIS processes
-    $ProcessesToKill = @("AdODIS", "AdODISService", "AdODISInstaller")
-    Write-SACMsg "Terminating ODIS processes..." "Info"
+    # 1. Kill active ODIS and Autodesk licensing processes; stop services that cause installer hangs
+    $ProcessesToKill = @("AdODIS", "AdODISService", "AdODISInstaller", "AdskLicensing*", "AdskSSO*", "AdskAccess*")
+    Write-SACMsg "Terminating ODIS and Autodesk licensing processes..." "Info"
     foreach ($proc in $ProcessesToKill) {
-        $running = Get-Process -Name $proc -ErrorAction SilentlyContinue
-        if ($running) {
-            Write-SACMsg "  Stopping running process: $proc" "Info"
-            Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
+        Get-Process -Name $proc -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($svcName in @("AdODISService", "AdskAccessService", "AdskLicensing")) {
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -ne "Stopped") {
+            Write-SACMsg "  Stopping service: $svcName" "Info"
+            Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -186,9 +188,19 @@ function Repair-SACODIS {
 
     # 6. Perform a fresh, silent reinstall of ODIS
     if ($downloadSuccess -and (Test-Path $LocalInstallerPath)) {
+        # Stop AdskAccessService before launching the installer. The ODIS installer restarts this
+        # service internally; if it is already in a bad/pending state the installer will hang
+        # waiting for the service to reach Running status.
+        $accessSvc = Get-Service -Name "AdskAccessService" -ErrorAction SilentlyContinue
+        if ($accessSvc -and $accessSvc.Status -ne "Stopped") {
+            Write-SACMsg "  Stopping AdskAccessService before installation..." "Info"
+            Stop-Service -Name "AdskAccessService" -Force -ErrorAction SilentlyContinue
+        }
+
         Write-SACMsg "Running fresh ODIS installation silently..." "Info"
         try {
-            $proc = Start-Process -FilePath $LocalInstallerPath -ArgumentList "--mode unattended" -Wait -PassThru -NoNewWindow -ErrorAction Stop
+            $proc = Start-Process -FilePath $LocalInstallerPath -ArgumentList "--mode unattended" -PassThru -NoNewWindow -ErrorAction Stop
+            Watch-SACProcessTree -RootProcess $proc -DisplayName "ODIS Installer" -TimeoutMinutes 15 -IdleTimeoutMinutes 5
             if ($proc.ExitCode -eq 0) {
                 Write-SACMsg "  [OK] Reinstallation completed successfully." "Success"
             } else {
