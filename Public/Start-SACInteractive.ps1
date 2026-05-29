@@ -484,7 +484,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.8.0"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.8.1"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"
