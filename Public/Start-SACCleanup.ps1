@@ -105,7 +105,7 @@ function Start-SACCleanup {
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $script:SACFailures = @()
 
-    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
+    $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "AdskLicensing*", "AdskSSO*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
 
     # --- Logging Setup ---
     $ToDate = (Get-Date -Format 'yyyyMMdd_HHmmss')
@@ -281,6 +281,10 @@ function Start-SACCleanup {
         if ($null -ne $Process) {
             Watch-SACProcessTree -RootProcess $Process -DisplayName $DisplayName -TimeoutMinutes 20 -IdleTimeoutMinutes 5 -TailLogFile $MsiLogFile
             Write-SACMsg "  Exit code $($Process.ExitCode): $DisplayName" "Info"
+            # Kill licensing/SSO subprocesses spawned by the uninstaller that run outside its process tree
+            foreach ($spawnedProc in @("AdskLicensing*", "AdskSSO*")) {
+                Get-Process -Name $spawnedProc -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
             $safeExitCodes = @(0, 3010, 1605, 1614, 1646, 7)
             if ($Process.ExitCode -notin $safeExitCodes) {
                 $script:SACFailures += [PSCustomObject]@{ Component = "Uninstall: $DisplayName"; Reason = "Exit Code $($Process.ExitCode)" }
