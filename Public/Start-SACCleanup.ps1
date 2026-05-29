@@ -104,6 +104,7 @@ function Start-SACCleanup {
 
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $script:SACFailures = @()
+    $script:SACLockedItems = [System.Collections.Generic.List[string]]::new()
 
     $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "AdskLicensing*", "AdskSSO*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
 
@@ -154,6 +155,9 @@ function Start-SACCleanup {
                         if ($purgeResult.LockedItems.Count -gt 0) {
                             Write-SACMsg "  Queuing $($purgeResult.LockedItems.Count) locked item(s) for deletion on reboot." "Warning"
                             Invoke-SACPendingDelete -Paths $purgeResult.LockedItems
+                            foreach ($lockedPath in $purgeResult.LockedItems) {
+                                if (-not $script:SACLockedItems.Contains($lockedPath)) { $script:SACLockedItems.Add($lockedPath) }
+                            }
                         }
                     } else {
                         Write-SACMsg "Purged orphaned directory: $fp" "Success"
@@ -565,6 +569,21 @@ function Start-SACCleanup {
         Write-Host "`n[*] All operations completed successfully with no failures.`n" -ForegroundColor Green
     } elseif ($criticals.Count -eq 0) {
         Write-Host "`n[*] Primary operations succeeded. $($warnings.Count) minor notice(s) logged.`n" -ForegroundColor Green
+    }
+
+    # Register post-logon cleanup script for any files that could not be deleted
+    if ($script:SACLockedItems.Count -gt 0) {
+        if (Test-SACInteractive -Silent $Silent) {
+            Write-Host "`n[!] $($script:SACLockedItems.Count) file(s) queued for OS-level deletion on next reboot." -ForegroundColor Yellow
+            $resp = Read-Host "    Also register a post-logon PowerShell cleanup script for redundancy? (y/N)"
+            if ($resp.Trim().ToLower() -eq 'y') {
+                $registered = Register-SACPostRebootCleanup -Paths $script:SACLockedItems.ToArray()
+                Write-Host "    $(if ($registered) { '[OK] Post-logon cleanup script registered.' } else { '[!] Registration failed.' })" -ForegroundColor $(if ($registered) { 'Green' } else { 'Red' })
+            }
+        } else {
+            Register-SACPostRebootCleanup -Paths $script:SACLockedItems.ToArray() | Out-Null
+            Write-SACMsg "Post-logon cleanup script registered for $($script:SACLockedItems.Count) locked item(s)." "Info"
+        }
     }
 
     # Persist outcome so the interactive menu can show a status badge on return
