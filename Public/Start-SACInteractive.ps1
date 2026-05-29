@@ -699,7 +699,7 @@ $command
                     $filePath = Join-Path $logDir $selectedFile[0]
                     Write-Host "`n  Reading $selectedFile..." -ForegroundColor DarkGray
                     
-                    $content = @()
+                    $content = $null
                     if ($script:SACTarget.IsRemote) {
                         $cmdParams = @{
                             ComputerName = $script:SACTarget.ComputerName
@@ -709,7 +709,20 @@ $command
                         if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
                         $content = Invoke-Command @cmdParams
                     } else {
-                        $content = Get-Content -LiteralPath $filePath -Tail 5000 -ErrorAction SilentlyContinue
+                        # Use a shared-read FileStream so the log can be read even if a transcript
+                        # session still holds the file open (e.g. during a hung install).
+                        try {
+                            $fs = [System.IO.File]::Open($filePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8, $true)
+                            $rawText = $sr.ReadToEnd()
+                            $sr.Close(); $fs.Close()
+                            if ($rawText) {
+                                $allLines = $rawText -split '\r?\n'
+                                $content = if ($allLines.Count -gt 5000) { $allLines[-5000..-1] } else { $allLines }
+                            }
+                        } catch {
+                            Write-Host "  [!] Could not open log file: $($_.Exception.Message)" -ForegroundColor Red
+                        }
                     }
 
                     if ($content) {
@@ -725,7 +738,11 @@ $command
                             Invoke-SACPause
                         }
                     } else {
-                        Write-Host "  Log file is empty or inaccessible." -ForegroundColor Yellow
+                        if (-not (Test-Path -LiteralPath $filePath)) {
+                            Write-Host "  Log file not found: $filePath" -ForegroundColor Red
+                        } else {
+                            Write-Host "  Log file is empty or could not be read: $filePath" -ForegroundColor Yellow
+                        }
                         Invoke-SACPause
                     }
                 }
