@@ -443,23 +443,18 @@ function Start-SACCleanup {
             $tier1Succeeded.Add($baseName.Trim()) | Out-Null
         }
 
-        # --- Tier 2: Service packs / updates ---
+        # --- Tier 2: Service packs / updates (always evict-only) ---
+        # Patch uninstallers require the parent product to be present and add no value once the
+        # Tier 1 uninstaller or directory purge has already handled the binaries.
         foreach ($item in $Tier2) {
             $dn = $item.App.DisplayName
-            # Check if any T1 parent of this update was successfully processed
-            $parentFound = $tier1Succeeded.Count -gt 0
-            if ($parentFound) {
-                Write-SACMsg "  [SKIP uninstall] Parent removed - evicting only: $dn" "Info"
-                try {
-                    Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
-                    Write-SACMsg "  Evicted: $dn" "Success"
-                } catch {
-                    Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
-                    $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
-                }
-            } else {
-                Write-SACMsg "  [FULL uninstall] No parent removed - running uninstaller: $dn" "Info"
-                Invoke-SACUninstallEntry -App $item.App
+            Write-SACMsg "  [EVICT] Skipping patch uninstaller - evicting registry: $dn" "Info"
+            try {
+                Remove-Item $item.App.PSPath -Recurse -Force -ErrorAction Stop
+                Write-SACMsg "  Evicted: $dn" "Success"
+            } catch {
+                Write-SACQuietLog "Failed to evict $($dn): $($_.Exception.Message)"
+                $script:SACFailures += [PSCustomObject]@{ Component = "Evict SP/Update: $dn"; Reason = $_.Exception.Message; Severity = 'Warning' }
             }
         }
 
