@@ -12,7 +12,7 @@
     RootModule        = 'SurgicalAutodeskCleaner.psm1'
 
     # Version number of this module.
-    ModuleVersion = '2.8.1'
+    ModuleVersion = '2.9.0'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -47,7 +47,9 @@ Features:
 
 Example RMM usage: Start-SACCleanup -TargetProducts "AutoCAD", "Revit" -TargetYears 2019, 2020 -Silent
 
-DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
+DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)'
 
     # Minimum version of the Windows PowerShell engine required by this module
     # PowerShellVersion = ''
@@ -115,7 +117,7 @@ DeepWiki Documentation: https://deepwiki.com/DailenG/SurgicalAutodeskCleaner'
             Tags = 'Autodesk', 'Cleanup', 'Purge', 'Uninstall', 'Licensing', 'UserProfile', 'Dailen'
 
             # Prerelease string
-            # Prerelease = 'beta'
+            Prerelease = 'beta'
 
             # A URL to the license for this module.
             LicenseUri = 'https://github.com/DailenG/SurgicalAutodeskCleaner/blob/master/LICENSE'

@@ -91,15 +91,15 @@ function Watch-SACProcessTree {
         while ($addedNew) {
             $addedNew = $false
             foreach ($p in $allProcs) {
-                $pId = [int]$p.ProcessId
+                $processId = [int]$p.ProcessId
                 $parentId = [int]$p.ParentProcessId
                 # If this process is NOT known, but its parent IS known...
-                if (-not $KnownProcs.ContainsKey($pId) -and $KnownProcs.ContainsKey($parentId)) {
+                if (-not $KnownProcs.ContainsKey($processId) -and $KnownProcs.ContainsKey($parentId)) {
                     $parentCreationTime = $KnownProcs[$parentId]
                     # PID Recycling Defense: The child must be created at or after the parent's creation time.
                     # Note: We allow a 2-second margin for potential clock skew or StartTime vs CreationDate deltas.
                     if ($p.CreationDate -ge $parentCreationTime.AddSeconds(-2)) {
-                        $KnownProcs[$pId] = $p.CreationDate
+                        $KnownProcs[$processId] = $p.CreationDate
                         $addedNew = $true
                     }
                 }

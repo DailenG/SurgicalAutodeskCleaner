@@ -153,6 +153,36 @@ function Start-SACInteractive {
         Write-Host "`nScanning registry for installed Autodesk products..." -ForegroundColor Cyan
 
         $discoveryBlock = {
+            function ConvertFrom-PackedMsiCode {
+                param([string]$PackedCode)
+
+                $normalized = $PackedCode.Trim().Trim('{', '}').Replace('-', '').ToUpperInvariant()
+                if ($normalized -notmatch '^[0-9A-F]{32}$') { return $null }
+
+                function ConvertFrom-ReversedText {
+                    param([string]$Value)
+                    $chars = $Value.ToCharArray()
+                    [array]::Reverse($chars)
+                    return -join $chars
+                }
+                function ConvertFrom-ReversedPairNibble {
+                    param([string]$Value)
+                    $result = New-Object System.Text.StringBuilder
+                    for ($i = 0; $i -lt $Value.Length; $i += 2) {
+                        $pair = $Value.Substring($i, [Math]::Min(2, $Value.Length - $i))
+                        [void]$result.Append((ConvertFrom-ReversedText -Value $pair))
+                    }
+                    return $result.ToString()
+                }
+
+                $part1 = ConvertFrom-ReversedText -Value $normalized.Substring(0, 8)
+                $part2 = ConvertFrom-ReversedText -Value $normalized.Substring(8, 4)
+                $part3 = ConvertFrom-ReversedText -Value $normalized.Substring(12, 4)
+                $part4 = ConvertFrom-ReversedPairNibble -Value $normalized.Substring(16, 4)
+                $part5 = ConvertFrom-ReversedPairNibble -Value $normalized.Substring(20, 12)
+                return "{$part1-$part2-$part3-$part4-$part5}".ToUpperInvariant()
+            }
+
             $regPaths = @(
                 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
                 'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
@@ -166,17 +196,77 @@ function Start-SACInteractive {
                         if (($null -ne $dn -and $dn -match 'Autodesk') -or ($null -ne $pb -and $pb -match 'Autodesk')) {
                             $results += [PSCustomObject]@{
                                 DisplayName          = $dn
+                                DisplayVersion       = $_.GetValue("DisplayVersion")
                                 Publisher            = $pb
                                 UninstallString      = $_.GetValue("UninstallString")
                                 QuietUninstallString = $_.GetValue("QuietUninstallString")
                                 InstallLocation      = $_.GetValue("InstallLocation")
+                                InstallSource        = $_.GetValue("InstallSource")
+                                LocalPackage         = $_.GetValue("LocalPackage")
                                 PSChildName          = $_.PSChildName
                                 PSPath               = $_.PSPath
+                                Source               = "Add/Remove Programs"
                             }
                         }
                     }
                 }
             }
+
+            $hiddenProductRoots = @(
+                'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products',
+                'HKLM:\SOFTWARE\Classes\Installer\Products'
+            )
+            $autodeskNamePattern = 'Autodesk|AutoCAD|Revit|Civil 3D|Inventor|Navisworks|ReCap|3ds Max|Maya|Vault|InfraWorks|Fusion|Alias|Moldflow|Netfabb|Advance Steel|DWG TrueView|OpenStudio|Unit Schemas|Steel Connections'
+
+            foreach ($rootPath in $hiddenProductRoots) {
+                if (-not (Test-Path $rootPath)) { continue }
+
+                Get-ChildItem -Path $rootPath -ErrorAction SilentlyContinue | ForEach-Object {
+                    $packedCode = $_.PSChildName
+                    if ($packedCode -notmatch '^[0-9A-Fa-f]{32}$') { return }
+
+                    $productKeyPath = Join-Path $rootPath $_.PSChildName
+                    $propsPath = Join-Path $productKeyPath 'InstallProperties'
+                    $productKey = Get-Item -LiteralPath $productKeyPath -ErrorAction SilentlyContinue
+                    $propsKey = Get-Item -LiteralPath $propsPath -ErrorAction SilentlyContinue
+                    $displayName = $null
+                    $displayVersion = $null
+                    $installLocation = $null
+                    $installSource = $null
+                    $localPackage = $null
+                    $uninstallString = $null
+
+                    if ($propsKey) {
+                        $displayName = $propsKey.GetValue("DisplayName")
+                        if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = $propsKey.GetValue("ProductName") }
+                        $displayVersion = $propsKey.GetValue("DisplayVersion")
+                        $installLocation = $propsKey.GetValue("InstallLocation")
+                        $installSource = $propsKey.GetValue("InstallSource")
+                        $localPackage = $propsKey.GetValue("LocalPackage")
+                        $uninstallString = $propsKey.GetValue("UninstallString")
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($displayName) -and $productKey) { $displayName = $productKey.GetValue("ProductName") }
+                    $matchText = "$displayName $installLocation $installSource $uninstallString"
+                    if ([string]::IsNullOrWhiteSpace($displayName) -or $matchText -notmatch $autodeskNamePattern) { return }
+
+                    $productCode = ConvertFrom-PackedMsiCode -PackedCode $packedCode
+                    $results += [PSCustomObject]@{
+                        DisplayName          = $displayName
+                        DisplayVersion       = $displayVersion
+                        Publisher            = "Autodesk"
+                        UninstallString      = $uninstallString
+                        QuietUninstallString = $null
+                        InstallLocation      = $installLocation
+                        InstallSource        = $installSource
+                        LocalPackage         = $localPackage
+                        PSChildName          = $productCode
+                        PSPath               = $productKeyPath
+                        Source               = "Hidden MSI"
+                    }
+                }
+            }
+
             return $results
         }
 
@@ -270,12 +360,111 @@ function Start-SACInteractive {
 
                     foreach ($app in $keys) {
                         $actionType = if ($app.PSChildName -match '^{.*}$' -and $app.UninstallString -match '^MsiExec\.exe') { "MSI Uninstall" } else { "Custom Uninstall" }
+                        $packedCode = if ($app.PSChildName -match '^{.*}$') { try { ConvertTo-SACPackedMsiCode -ProductCode $app.PSChildName } catch { "" } } else { "" }
                         $Report += [PSCustomObject]@{
                             Action="$actionType"; ComponentType="Application"
                             TargetProduct=$product; TargetYear=$year
                             DisplayName=$app.DisplayName; Detail=$app.UninstallString
+                            ProductCode=if ($app.PSChildName -match '^{.*}$') { $app.PSChildName } else { "" }
+                            PackedCode=$packedCode
+                            RegistryPath=$app.PSPath
                         }
                     }
+                }
+            }
+
+            $hiddenState = $null
+            if ($script:SACTarget.IsRemote) {
+                $helperBundle = Get-SACHiddenInstallerStateFunctionBundle
+                $hiddenStateBlock = {
+                    param($helperDefinitions, $prods, $years, $keys)
+                    . ([scriptblock]::Create($helperDefinitions))
+                    Get-SACHiddenInstallerState -TargetProducts $prods -TargetYears $years -UninstallKeys $keys
+                }
+                $cmdParams = @{
+                    ComputerName = $script:SACTarget.ComputerName
+                    ScriptBlock  = $hiddenStateBlock
+                    ArgumentList = @($helperBundle, $SelectedProducts, $SelectedYears, $UninstallKeys)
+                    ErrorAction  = "SilentlyContinue"
+                }
+                if ($script:SACTarget.Credential) { $cmdParams["Credential"] = $script:SACTarget.Credential }
+                $hiddenState = Invoke-Command @cmdParams
+            } else {
+                $hiddenState = Get-SACHiddenInstallerState -TargetProducts $SelectedProducts -TargetYears $SelectedYears -UninstallKeys $UninstallKeys
+            }
+
+            foreach ($hidden in @($hiddenState.HiddenProducts)) {
+                $detailParts = @(
+                    "Source=$($hidden.Source)",
+                    "DisplayVersion=$($hidden.DisplayVersion)",
+                    "InstallLocation=$($hidden.InstallLocation)",
+                    "InstallSource=$($hidden.InstallSource)",
+                    "LocalPackage=$($hidden.LocalPackage)"
+                ) | Where-Object { $_ -notmatch '=$' }
+
+                $Report += [PSCustomObject]@{
+                    Action="Remove Hidden MSI Product Key"; ComponentType="Hidden MSI Product"
+                    TargetProduct=$hidden.Product; TargetYear=$hidden.Year
+                    DisplayName=$hidden.DisplayName; Detail=($detailParts -join "; ")
+                    ProductCode=$hidden.ProductCode
+                    PackedCode=$hidden.PackedCode
+                    RegistryPath=$hidden.RegistryPath
+                }
+            }
+
+            foreach ($stateItem in @($hiddenState.ProductStates | Where-Object { $_.IsInstalled })) {
+                $Report += [PSCustomObject]@{
+                    Action="MSI ProductState Installed"; ComponentType="MSI ProductState"
+                    TargetProduct="Targeted"; TargetYear="Targeted"
+                    DisplayName=$stateItem.ProductCode; Detail="ProductState=5; MSI still thinks installed"
+                    ProductCode=$stateItem.ProductCode
+                    PackedCode=$stateItem.PackedCode
+                    RegistryPath=""
+                }
+            }
+
+            foreach ($ref in @($hiddenState.ComponentReferences)) {
+                $Report += [PSCustomObject]@{
+                    Action="Remove MSI Component Reference"; ComponentType="MSI Component Reference"
+                    TargetProduct=$ref.Product; TargetYear=$ref.Year
+                    DisplayName=$ref.ValueName; Detail="Component=$($ref.ComponentKey); Matched=$($ref.MatchedTerm)"
+                    ProductCode=""
+                    PackedCode=$ref.MatchedTerm
+                    RegistryPath=$ref.RegistryPath
+                }
+            }
+
+            foreach ($ref in @($hiddenState.UpgradeCodeReferences)) {
+                $Report += [PSCustomObject]@{
+                    Action="Remove MSI UpgradeCode Reference"; ComponentType="MSI UpgradeCode Reference"
+                    TargetProduct=$ref.Product; TargetYear=$ref.Year
+                    DisplayName=$ref.ValueName; Detail="UpgradeCode=$($ref.UpgradeCode); Matched=$($ref.MatchedTerm)"
+                    ProductCode=""
+                    PackedCode=$ref.MatchedTerm
+                    RegistryPath=$ref.RegistryPath
+                }
+            }
+
+            foreach ($odis in @($hiddenState.OdisRemnants)) {
+                $Report += [PSCustomObject]@{
+                    Action=if ($odis.Action -eq 'Rename Folder') { "Rename ODIS Folder" } else { "Report ODIS Install.db Match" }
+                    ComponentType=$odis.Source
+                    TargetProduct=$odis.Product; TargetYear=$odis.Year
+                    DisplayName=$odis.DisplayName; Detail="Matched=$($odis.MatchedTerm); PackageIds=$($odis.PackageIds)"
+                    ProductCode=$odis.ProductCodes
+                    PackedCode=$odis.PackedCodes
+                    RegistryPath=$odis.Path
+                }
+            }
+
+            foreach ($warning in @($hiddenState.RelativePathWarnings)) {
+                $Report += [PSCustomObject]@{
+                    Action="Review Relative Installer Path"; ComponentType="Warning"
+                    TargetProduct=$warning.Product; TargetYear=$warning.Year
+                    DisplayName=$warning.DisplayName; Detail="$($warning.PropertyName)=$($warning.Value)"
+                    ProductCode=""
+                    PackedCode=""
+                    RegistryPath=$warning.SourcePath
                 }
             }
 
@@ -308,6 +497,9 @@ function Start-SACInteractive {
                     Action="Terminate Process"; ComponentType="Active Process"
                     TargetProduct="Global"; TargetYear="Global"
                     DisplayName="$($p.Name).exe"; Detail="PID: $($p.Id)"
+                    ProductCode=""
+                    PackedCode=""
+                    RegistryPath=""
                 }
             }
 
@@ -351,14 +543,20 @@ function Start-SACInteractive {
                     Action="Purge Directory"; ComponentType="Orphaned Folder"
                     TargetProduct=$d.Product; TargetYear=$d.Year
                     DisplayName=$d.Name; Detail=$d.FullName
+                    ProductCode=""
+                    PackedCode=""
+                    RegistryPath=""
                 }
             }
 
             if ($Report.Count -gt 0) {
-                $Report = $Report | Select-Object -Unique *
+                $Report = $Report | Select-Object Action,ComponentType,TargetProduct,TargetYear,DisplayName,Detail,ProductCode,PackedCode,RegistryPath -Unique
                 $OutPath = "$([Environment]::GetFolderPath('Desktop'))\Autodesk_ScanReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
                 $Report | Export-Csv -Path $OutPath -NoTypeInformation -Force
                 Write-Host "Scan Complete! $($Report.Count) actions identified." -ForegroundColor Green
+                if ($hiddenState) {
+                    Write-Host "Hidden MSI products: $($hiddenState.Summary.HiddenMsiProducts); ProductState=5: $($hiddenState.Summary.ProductStateInstalled); Component refs: $($hiddenState.Summary.ComponentReferences); Upgrade-code refs: $($hiddenState.Summary.UpgradeCodeReferences); ODIS remnants: $($hiddenState.Summary.OdisRemnants)" -ForegroundColor Cyan
+                }
                 Write-Host "Report saved to: $OutPath`n" -ForegroundColor Green
             } else {
                 Write-Host "Scan Complete! No matching components would be removed.`n" -ForegroundColor Yellow
@@ -484,7 +682,7 @@ $command
         $borderLine = $V + (" " * $W) + $V
 
         # Top border + title
-        $title     = "  SURGICAL AUTODESK CLEANER  v2.8.1"
+        $title     = "  SURGICAL AUTODESK CLEANER  v2.9.0-beta"
         $titlePad  = $title.PadLeft(($W + $title.Length) / 2)
         Write-Host "$TL$border$TR" -ForegroundColor DarkCyan
         Write-BoxLine -Text $titlePad -Color "Cyan"

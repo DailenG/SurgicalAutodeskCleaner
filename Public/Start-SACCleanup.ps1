@@ -105,6 +105,12 @@ function Start-SACCleanup {
     $StopWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $script:SACFailures = @()
     $script:SACLockedItems = [System.Collections.Generic.List[string]]::new()
+    $script:SACHiddenInstallerProductCodes = @()
+    $script:SACHiddenInstallerProductStateCodes = @()
+    $script:SACHiddenInstallerComponentRefsRemoved = 0
+    $script:SACHiddenInstallerUpgradeRefsRemoved = 0
+    $script:SACHiddenInstallerOdisFoldersRenamed = 0
+    $script:SACHiddenInstallerSeedKeys = @()
 
     $ProcessesToKill = @("acad*", "AcEventSync*", "AcQMod*", "revit*", "*adsk*", "AdskAccess*", "AdskLicensing*", "AdskSSO*", "GenuineService*", "3dsmax*", "maya*", "inventor*", "roamer*", "navisworks*", "recap*", "dwgviewr*", "DesktopConnector*", "fusion*", "alias*", "vault*", "moldflow*", "modlflow*", "netfabb*")
 
@@ -221,6 +227,56 @@ function Start-SACCleanup {
                     }
                 }
             }
+        }
+    }
+
+    function Add-SACHiddenInstallerCleanupSummary {
+        param([object]$Result)
+
+        foreach ($code in @($Result.HiddenMsiProductCodes)) {
+            if ($code -and $script:SACHiddenInstallerProductCodes -notcontains $code) {
+                $script:SACHiddenInstallerProductCodes += $code
+            }
+        }
+
+        foreach ($code in @($Result.ProductStateInstalledCodes)) {
+            if ($code -and $script:SACHiddenInstallerProductStateCodes -notcontains $code) {
+                $script:SACHiddenInstallerProductStateCodes += $code
+            }
+        }
+
+        $script:SACHiddenInstallerComponentRefsRemoved += [int]$Result.ComponentRefsRemoved
+        $script:SACHiddenInstallerUpgradeRefsRemoved += [int]$Result.UpgradeCodeRefsRemoved
+        $script:SACHiddenInstallerOdisFoldersRenamed += [int]$Result.OdisFoldersRenamed
+    }
+
+    function Add-SACHiddenInstallerDiscoverySummary {
+        param([object]$State)
+
+        foreach ($product in @($State.HiddenProducts | Where-Object { $_.ProductCode })) {
+            if ($script:SACHiddenInstallerProductCodes -notcontains $product.ProductCode) {
+                $script:SACHiddenInstallerProductCodes += $product.ProductCode
+            }
+        }
+
+        foreach ($stateItem in @($State.ProductStates | Where-Object { $_.IsInstalled })) {
+            if ($script:SACHiddenInstallerProductStateCodes -notcontains $stateItem.ProductCode) {
+                $script:SACHiddenInstallerProductStateCodes += $stateItem.ProductCode
+            }
+        }
+    }
+
+    function Write-SACHiddenInstallerFinding {
+        param([object]$State)
+
+        foreach ($stateItem in @($State.ProductStates | Where-Object { $_.IsInstalled })) {
+            Write-SACMsg "  [MSI ProductState=5] $($stateItem.ProductCode) still reports installed." "Warning"
+            Write-SACQuietLog "MSI ProductState=5 for $($stateItem.ProductCode) packed=$($stateItem.PackedCode)"
+        }
+
+        foreach ($warning in @($State.RelativePathWarnings)) {
+            Write-SACMsg "  [WARN] Relative installer path: $($warning.PropertyName)=$($warning.Value)" "Warning"
+            Write-SACQuietLog "Relative installer path in $($warning.SourcePath): $($warning.PropertyName)=$($warning.Value)"
         }
     }
 
@@ -391,15 +447,20 @@ function Start-SACCleanup {
                     
                     if ($null -ne $dn -and $dn -like $PackageName) {
                         if ($AnyVendor -or ($null -ne $pb -and $pb -match $vendorPattern) -or ($dn -match $vendorPattern)) {
-                            $AllKeys += [PSCustomObject]@{
+                            $appKey = [PSCustomObject]@{
                                 DisplayName          = $dn
+                                DisplayVersion       = $_.GetValue("DisplayVersion")
                                 Publisher            = $pb
                                 UninstallString      = $_.GetValue("UninstallString")
                                 QuietUninstallString = $_.GetValue("QuietUninstallString")
                                 InstallLocation      = $_.GetValue("InstallLocation")
+                                InstallSource        = $_.GetValue("InstallSource")
+                                LocalPackage         = $_.GetValue("LocalPackage")
                                 PSChildName          = $_.PSChildName
                                 PSPath               = $_.PSPath
                             }
+                            $AllKeys += $appKey
+                            $script:SACHiddenInstallerSeedKeys += $appKey
                         }
                     }
                 }
@@ -535,6 +596,27 @@ function Start-SACCleanup {
         }
     }
 
+    Write-SACMsg "Scanning hidden MSI installer-state and ODIS remnants for selected targets..." "Info"
+    $hiddenState = Get-SACHiddenInstallerState -TargetProducts $TargetProducts -TargetYears ($TargetYears | ForEach-Object { $_.ToString() }) -UninstallKeys ($script:SACHiddenInstallerSeedKeys | Select-Object -Unique *)
+    $hasHiddenInstallerState = (
+        $hiddenState.Summary.HiddenMsiProducts -gt 0 -or
+        $hiddenState.Summary.ProductStateInstalled -gt 0 -or
+        $hiddenState.Summary.ComponentReferences -gt 0 -or
+        $hiddenState.Summary.UpgradeCodeReferences -gt 0 -or
+        $hiddenState.Summary.OdisRemnants -gt 0 -or
+        $hiddenState.Summary.RelativePathWarnings -gt 0
+    )
+
+    if ($hasHiddenInstallerState) {
+        Write-SACMsg "Found hidden installer-state: $($hiddenState.Summary.HiddenMsiProducts) hidden MSI product(s), $($hiddenState.Summary.ProductStateInstalled) ProductState=5, $($hiddenState.Summary.ComponentReferences) component ref(s), $($hiddenState.Summary.UpgradeCodeReferences) upgrade ref(s), $($hiddenState.Summary.OdisRemnants) ODIS remnant(s)." "Info"
+        Add-SACHiddenInstallerDiscoverySummary -State $hiddenState
+        Write-SACHiddenInstallerFinding -State $hiddenState
+        $hiddenCleanupResult = Invoke-SACHiddenInstallerStateCleanup -State $hiddenState -LogDir $LogDir
+        Add-SACHiddenInstallerCleanupSummary -Result $hiddenCleanupResult
+    } else {
+        Write-SACQuietLog "No hidden MSI installer-state or ODIS remnants matched the selected targets."
+    }
+
     # Wipe specific Autodesk temp files and directories
     Invoke-SACTempAutodeskCleanup
 
@@ -569,6 +651,15 @@ function Start-SACCleanup {
         Write-Host "`n[*] All operations completed successfully with no failures.`n" -ForegroundColor Green
     } elseif ($criticals.Count -eq 0) {
         Write-Host "`n[*] Primary operations succeeded. $($warnings.Count) minor notice(s) logged.`n" -ForegroundColor Green
+    }
+
+    if ($script:SACHiddenInstallerProductCodes.Count -gt 0 -or $script:SACHiddenInstallerProductStateCodes.Count -gt 0 -or $script:SACHiddenInstallerComponentRefsRemoved -gt 0 -or $script:SACHiddenInstallerUpgradeRefsRemoved -gt 0 -or $script:SACHiddenInstallerOdisFoldersRenamed -gt 0) {
+        Write-Host "[*] Hidden installer-state cleanup summary:" -ForegroundColor Cyan
+        Write-Host "    Hidden MSI products: $($script:SACHiddenInstallerProductCodes.Count)" -ForegroundColor Gray
+        Write-Host "    ProductState=5 products: $($script:SACHiddenInstallerProductStateCodes.Count)" -ForegroundColor Gray
+        Write-Host "    Component refs removed: $script:SACHiddenInstallerComponentRefsRemoved" -ForegroundColor Gray
+        Write-Host "    Upgrade-code refs removed: $script:SACHiddenInstallerUpgradeRefsRemoved" -ForegroundColor Gray
+        Write-Host "    ODIS folders renamed: $script:SACHiddenInstallerOdisFoldersRenamed`n" -ForegroundColor Gray
     }
 
     # Register post-logon cleanup script for any files that could not be deleted
@@ -613,6 +704,11 @@ function Start-SACCleanup {
         Elapsed        = $ElapsedTime
         LogDir         = $LogDir
         AttentionItems = if ($criticals.Count -gt 0) { $AttentionFile } else { $null }
+        HiddenMsiProducts = $script:SACHiddenInstallerProductCodes.Count
+        ProductStateInstalled = $script:SACHiddenInstallerProductStateCodes.Count
+        ComponentRefsRemoved = $script:SACHiddenInstallerComponentRefsRemoved
+        UpgradeCodeRefsRemoved = $script:SACHiddenInstallerUpgradeRefsRemoved
+        OdisFoldersRenamed = $script:SACHiddenInstallerOdisFoldersRenamed
     }
 
     Stop-Transcript | Out-Null
