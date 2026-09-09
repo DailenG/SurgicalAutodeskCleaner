@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/SurgicalAutodeskCleaner.svg)](https://www.powershellgallery.com/packages/SurgicalAutodeskCleaner)
 [![DeepWiki](https://img.shields.io/badge/Docs-DeepWiki-blue)](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/DailenG/SurgicalAutodeskCleaner)
 
 A powerful, highly targeted, enterprise-grade PowerShell module designed to surgically remove technical debt from CAD/BIM workstations by cleanly uninstalling legacy Autodesk products — and resetting user profile data and licensing when things go sideways.
 
@@ -157,6 +158,7 @@ Start-SACCleanup -TargetProducts "Revit"
 | `-Silent` | `switch` | Bypasses the interactive confirmation prompt. Required for RMM execution. |
 | `-AnyVendor` | `switch` | Bypasses the Autodesk vendor failsafe. Use with care. |
 | `-AdditionalVendors` | `string[]` | Expands the vendor allowlist (e.g., `-AdditionalVendors "MyPluginCorp"`). |
+| `-WhatIf` | `switch` | Previews every uninstall, eviction, directory purge and shortcut removal without changing anything. |
 
 ---
 
@@ -176,6 +178,8 @@ Start-SACPurge -Silent
 | `-Silent` | `switch` | Bypasses the interactive confirmation prompt. |
 | `-AnyVendor` | `switch` | Bypasses the Autodesk vendor failsafe. |
 | `-AdditionalVendors` | `string[]` | Expands the vendor allowlist. |
+| `-WhatIf` | `switch` | Previews every uninstall, service removal, registry wipe and directory purge without changing anything. |
+| `-ClearTemp` | `switch` | Also clears the user and Windows temp folders. |
 
 ---
 
@@ -291,6 +295,18 @@ Repair-SACODIS -Silent
 | Parameter | Type | Description |
 |---|---|---|
 | `-Silent` | `switch` | Bypasses the confirmation prompt. |
+| `-WhatIf` | `switch` | Previews the repair without terminating processes, deleting the service, renaming folders or downloading the installer. |
+
+---
+
+## Uninstall safety model
+
+Add/Remove Programs (ARP) is only a projection of the Windows Installer hives. Removing an ARP key while the product is still registered leaves a product that MSI believes is installed but that no ARP-driven tool can see: later installers skip it, and it can no longer be repaired or removed. SAC therefore never decides on an exit code alone.
+
+- **Eviction is gated on registration.** An ARP key is removed only after the product's registration is confirmed gone from `Installer\UserData\<SID>\Products|Patches\<packed>`, `Classes\Installer\Products|Patches\<packed>` and `MsiQueryProductState`. Entries that fail this check are kept, reported as attention items, and re-verified at the end of the run.
+- **`3010` is a reboot barrier, not a success.** `ERROR_SUCCESS_REBOOT_REQUIRED` means the MSI transaction completes on reboot. The ARP entry is kept, the run stops immediately, and the remaining phases (service removal, registry wipe, file wipe) are skipped. Reboot and re-run to finish.
+- **`1603` stays visible.** A failed uninstall keeps its ARP entry so the product remains listed and retryable; the failure is recorded in `AttentionItems.txt`.
+- **Verification reads the installer hives, not ARP.** Every run ends with a residue scan that flags products registered with no ARP entry, and patches registered globally but linked to zero products (the state behind `1647` install failures). Findings are written to `InstallerResidue.txt` in the log directory.
 
 ---
 

@@ -13,6 +13,12 @@
 - [x] **Service & Lock Hardening**
     - [x] Explicitly target `AdskAccessService` and `GenuineService` (AGS) for removal.
     - [x] Implement a `PendingFileRenameOperations` queue for locked files (Reboot Deletion).
+- [x] **Uninstall Safety Model** (issue #1)
+    - [x] Gate Add/Remove Programs eviction on the product's Windows Installer registration instead of the uninstaller exit code.
+    - [x] Treat `3010` as a reboot barrier: keep the ARP entry, stop the run, re-verify after the reboot.
+    - [x] Keep `1603` failures visible and retryable in Add/Remove Programs.
+    - [x] Verify runs against the installer hives directly (orphaned products, patches linked to zero products) instead of ARP.
+    - [x] `SupportsShouldProcess` / `-WhatIf` on `Start-SACCleanup`, `Start-SACPurge` and `Repair-SACODIS`.
 - [ ] **Unit Testing Improvements**
     - Increase coverage for `Get-SACTier` classification logic.
     - Add mock-based testing for registry parsing and uninstaller launch logic.
