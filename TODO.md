@@ -19,6 +19,13 @@
     - [x] Keep `1603` failures visible and retryable in Add/Remove Programs.
     - [x] Verify runs against the installer hives directly (orphaned products, patches linked to zero products) instead of ARP.
     - [x] `SupportsShouldProcess` / `-WhatIf` on `Start-SACCleanup`, `Start-SACPurge` and `Repair-SACODIS`.
+- [x] **Supervisor and Scan Hardening** (2.10.1)
+    - [x] Stop sampling a dead child PID with `Get-Process -ErrorAction Stop`; sample from the CIM snapshot inside a fenced pass so a vanished child can never unwind the run.
+    - [x] Write the run folder and transcript under `-WhatIf` (`-WhatIf:$false` on the log writes).
+    - [x] One ODIS remnant record per folder, file text cached and quick-rejected, content libraries skipped.
+    - [x] Index product/packed codes by context once for the Components/UpgradeCodes scans; ordinal product matching in `Test-SACContextTextMatch`.
+    - [x] Progress output during the multi-minute Components scan.
+    - [x] Name the condition that tripped the pending-reboot warning.
 - [ ] **Unit Testing Improvements**
     - Increase coverage for `Get-SACTier` classification logic.
     - Add mock-based testing for registry parsing and uninstaller launch logic.
